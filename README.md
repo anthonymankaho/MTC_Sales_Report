@@ -1,11 +1,11 @@
-# MTC Sales Report
+# MTC Sales Report Processing
 
-Tooling that replaces the manual data-entry portion of the MTC monthly sales/commission
-RPA process. Logging into MMS/EPICOR and downloading the source reports stays manual;
-this project takes those source files and prepares the rows/values that go into the
-master workbook, then merges them in safely.
+Tooling for the monthly MTC sales/commission report cycle. It replaces the manual
+data-entry portion of the process — logging into MMS/EPICOR and downloading the source
+reports stays manual — by taking those source files, preparing the rows/values that go
+into the master workbook, and merging them in safely.
 
-## How the monthly process works
+## Monthly processing steps
 
 1. **Download source files** from MMS/EPICOR (manual, unchanged):
    - `IVR032.xlsx` — sales export
