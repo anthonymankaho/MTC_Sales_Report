@@ -36,6 +36,33 @@ into the master workbook, and merging them in safely.
 See [MTC Sales Report Import SOP.docx](<MTC Sales Report Import SOP.docx>) for the full
 step-by-step SOP.
 
+## Interactive HTML report (optional)
+
+Once the monthly master workbook is finalized (Step 5 above), an interactive, single-file
+HTML version of the FIN_MTC Sales & Margin report can be generated for sharing by email or
+presenting to others — no Excel required to view it. This is a separate, optional
+capability from the monthly import cycle; run it whenever an updated report needs to be
+shared.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File HTML_Report_Generator\Generate-MTCSalesReportHtml.ps1
+```
+
+No arguments are required for the normal monthly case — the script auto-detects the newest
+matching `FIN_MTC Sales & Margin (...)_YYYYMMDD_R#.xlsx` file in the project folder, reads
+it read-only via Excel COM automation (never modifies the source), and writes
+`FIN_MTC_Sales_Report_html_TEMP.html` to the project root.
+
+The report has nine tabs — Dashboard (KPIs + charts, NET/NET NET toggle), Data (the full
+transaction ledger), Exchange Rate, five YoY (2026 vs 2025) comparison tabs each with a
+Total Index and pie chart, and Customer-Quarter. Every tab supports an English/Traditional
+Chinese toggle and light/dark mode (top right), and clicking any highlighted number or name
+drills into the underlying transactions on the Data tab. The whole thing is one
+self-contained HTML file — safe to attach directly to an email.
+
+See [MTC Sales Report Import SOP.docx](<MTC Sales Report Import SOP.docx>), section 5, for
+the full write-up.
+
 ## Structure
 
 | Path | Purpose |
@@ -52,6 +79,10 @@ step-by-step SOP.
 | `IVR032.xlsx` | Source: monthly sales export |
 | `STANDARD EXCHANGE RATE-YYYY-MM.xls` | Source: monthly FX rate table |
 | `MTC_Import_Rows.xlsx` | Staged output from `app/index.html`, ready to merge |
+| `HTML_Report_Generator/Generate-MTCSalesReportHtml.ps1` | Extracts data from the finalized FIN_MTC workbook via Excel COM (read-only) |
+| `HTML_Report_Generator/build_report.js` | Node script that assembles the extracted data into the single-file interactive HTML report |
+| `HTML_Report_Generator/vendor/` | Vendored jQuery, DataTables, and Chart.js used by the generated report |
+| `FIN_MTC_Sales_Report_html_TEMP.html` | Output of the HTML report generator — the shareable interactive report |
 
 ## Notes
 

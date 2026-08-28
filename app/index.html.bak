@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MTC Sales Report Import Tool</title>
+<script src="xlsx.full.min.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: Segoe UI, Arial, sans-serif; max-width: 1100px; margin: 24px auto; padding: 0 16px; line-height: 1.5; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 17px; margin-top: 32px; border-bottom: 1px solid #8884; padding-bottom: 4px; }
+  .step { background: #80808014; border: 1px solid #8884; border-radius: 8px; padding: 16px; margin: 12px 0; }
+  .step label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input[type=file], input[type=number] { padding: 6px; font-size: 14px; }
+  button { background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  button:disabled { background: #93a3bd; cursor: not-allowed; }
+  button:hover:not(:disabled) { background: #1d4ed8; }
+  .warn { color: #b45309; }
+  .err { color: #b91c1c; }
+  .ok { color: #15803d; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  th, td { border: 1px solid #8886; padding: 3px 6px; white-space: nowrap; }
+  th { background: #80808022; position: sticky; top: 0; }
+  .previewWrap { max-height: 360px; overflow: auto; border: 1px solid #8884; margin-top: 8px; }
+  ol { padding-left: 20px; }
+  code { background: #80808022; padding: 1px 5px; border-radius: 4px; }
+  .badge { display:inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-right: 6px; }
+  .badge.blue { background:#2563eb22; color:#2563eb; }
+  .badge.amber { background:#b4530922; color:#b45309; }
+  .badge.gray { background:#80808022; color:#808080; }
+</style>
+</head>
+<body>
+
+<h1>MTC Sales Report Import Tool</h1>
+<p>Replaces the manual data-entry portion of the RPA process. Everything upstream (logging into MMS / EPICOR,
+running the reports, downloading the source files) stays manual, per your existing process. This tool takes the
+three monthly source files you already have and prepares the rows/values that need to go into
+<code>Sales-Data-MTC-Mthly Rate.xlsx</code>, as a single file with 3 tabs you review and paste in yourself
+(no automatic writing to your master file).</p>
+
+<h2>Step 1 — IVR032 export → "MTC Sales Details"</h2>
+<div class="step">
+  <label>Select the IVR032.xlsx export</label>
+  <input type="file" id="ivrFile" accept=".xlsx,.xls">
+  <div style="margin-top:12px">
+    <button id="processBtn" disabled>Process IVR032 file</button>
+    <span id="status" style="margin-left:12px"></span>
+  </div>
+</div>
+
+<div id="ivrResults" style="display:none">
+  <div id="summary" style="margin-top:8px"></div>
+  <div id="warnings" style="font-size:13px;margin-top:8px"></div>
+  <div class="previewWrap"><table id="previewTable"></table></div>
+</div>
+
+<h2>Step 2 — Master workbook (for auto-detecting next rows)</h2>
+<div class="step">
+  <p style="margin:0 0 8px;font-size:13px;opacity:.85">Optional but recommended: point this at
+    <code>Sales-Data-MTC-Mthly Rate.xlsx</code>. It reads (never writes) the <code>MTC Sales Details</code>,
+    <code>Net Selling Price</code>, <code>Exchange Rate</code> and <code>PO comm</code> sheets to tell you exactly
+    which rows the new data should land on.</p>
+  <input type="file" id="masterFile" accept=".xlsx,.xls">
+  <span id="detectStatus" style="margin-left:10px;font-size:13px"></span>
+  <p style="margin:12px 0 4px;font-size:13px">Or type the next empty "MTC Sales Details" row yourself
+    (check with Ctrl+End in Excel on that sheet):</p>
+  <input type="number" id="startRow" min="2" step="1" placeholder="e.g. 2812">
+</div>
+
+<h2>Step 3 — Monthly exchange rate → "Exchange Rate"</h2>
+<div class="step">
+  <p style="margin:0 0 8px;font-size:13px;opacity:.85">Select the <code>STANDARD EXCHANGE RATE-YYYY-MM</code> file.
+    Reads the "Exchange rate table" sheet, columns C13:C24 (currency) and E13:E24 (HK Dollar rate), and maps
+    AUD/CAD/CNY/EUR/GBP/JPY/NTD/THB into columns C:J. The master's "Exchange Rate" sheet already has a pre-built row
+    for each future month (columns K/L filled, C:J blank) — this just tells you which row and what to put in it.</p>
+  <input type="file" id="fxFile" accept=".xls,.xlsx">
+  <span id="fxStatus" style="margin-left:10px;font-size:13px"></span>
+  <div id="fxResults" style="display:none;margin-top:8px">
+    <div id="fxSummary"></div>
+    <div id="fxWarnings" style="font-size:13px;margin-top:6px"></div>
+    <div class="previewWrap"><table id="fxTable"></table></div>
+  </div>
+</div>
+
+<h2>Step 4 — Sales &amp; Commission Report → "Net Selling Price"</h2>
+<div class="step">
+  <p style="margin:0 0 8px;font-size:13px;opacity:.85">Select <code>Sales &amp; Commission Report-MTC.xlsx</code>.
+    Reads the "Combined" sheet and copies columns B:AI straight across into the same columns of
+    "Net Selling Price" (they're in the same order), plus derives the Monthly (yyyy-mm) column. Column A (Key) and
+    columns AJ:AR are formulas already in the master sheet — extend those down as usual, this only supplies the raw data.</p>
+  <input type="file" id="commFile" accept=".xlsx,.xls">
+  <span id="commStatus" style="margin-left:10px;font-size:13px"></span>
+  <div id="commResults" style="display:none;margin-top:8px">
+    <div id="commSummary"></div>
+    <div id="commWarnings" style="font-size:13px;margin-top:6px"></div>
+    <div class="previewWrap"><table id="commTable"></table></div>
+  </div>
+</div>
+
+<h2>Step 5 — Purchase Commission → "PO comm"</h2>
+<div class="step">
+  <p style="margin:0 0 8px;font-size:13px;opacity:.85">Select <code>EPI_Purchase Commission Combined.xlsx</code>.
+    Reads its "Combined" sheet and copies columns A:AH straight across into the same columns of the master's
+    "PO comm" sheet (same order), plus derives column AI (PO+SKU+QTY, a simple key = ORDER_NO+PART_NO+REC_QTY —
+    this one isn't a live formula in the master sheet, so it's supplied directly rather than left for you to extend).
+    Columns AJ (TTL COST USD) and AK (Rate) beyond that are <b>not</b> simple formulas in the existing data — please
+    fill/verify those manually after pasting.</p>
+  <input type="file" id="poFile" accept=".xlsx,.xls">
+  <span id="poStatus" style="margin-left:10px;font-size:13px"></span>
+  <div id="poResults" style="display:none;margin-top:8px">
+    <div id="poSummary"></div>
+    <div id="poWarnings" style="font-size:13px;margin-top:6px"></div>
+    <div class="previewWrap"><table id="poTable"></table></div>
+  </div>
+</div>
+
+<h2>Step 6 — download &amp; check</h2>
+<div class="step">
+  <div id="finalSummary" style="margin-bottom:10px;font-size:13px">Run at least one of Steps 1, 3, 4, 5 to enable the download.</div>
+  <button id="downloadBtn" disabled>Download MTC_Import_Rows.xlsx</button>
+  <p style="margin-top:10px;font-size:13px;opacity:.8">Open this and check it manually against the source files before
+    using Step 7 — or if you'd rather not automate the write, follow the manual paste instructions below instead.</p>
+</div>
+
+<div id="instructions">
+  <ol>
+    <li>Open <code>Sales-Data-MTC-Mthly Rate.xlsx</code>.</li>
+    <li><b>MTC Sales Details</b> tab of the download → in the master's <code>MTC Sales Details</code> sheet, select the last
+      existing formula row and paste it down for as many rows as were generated (extends Family, Part Desc, Division,
+      Vendor Name, Exchange Rate, Net Selling Price, Fabrication Code/Desc lookups, etc.). Then copy the downloaded
+      data rows and <b>Paste Special → Values → Skip Blanks</b> at your start row — this fills only the raw columns
+      and leaves the formulas you just extended untouched.</li>
+    <li><b>Exchange Rate</b> tab of the download (if present) → find the row in the master's <code>Exchange Rate</code>
+      sheet whose column B matches the yyyy-mm shown, and paste the C:J values from the download into that row's C:J
+      (that row already exists — you're filling in blanks, not adding a row).</li>
+    <li><b>Net Selling Price</b> tab of the download (if present) → same pattern as step 2: extend the formula row
+      (column A key formula, and columns AJ:AR) down for as many new rows as were generated in the master's
+      <code>Net Selling Price</code> sheet, then Paste Special → Values → Skip Blanks the downloaded rows starting
+      at its next empty row.</li>
+    <li><b>PO comm</b> tab of the download (if present) → append the rows (A:AI, including the derived key) at the
+      next empty row of the master's <code>PO comm</code> sheet — column AI is supplied directly so no formula
+      extension is needed for it, but double check/fill columns AJ (TTL COST USD) and AK (Rate) manually.</li>
+    <li>Save the master file.</li>
+  </ol>
+</div>
+
+<h2>Step 7 — Insert current month data into the master report</h2>
+<div class="step">
+  <p style="margin:0 0 8px;font-size:13px">
+    <b>This is not a button in this page.</b> An earlier version tried to do this combine step entirely in the
+    browser (reading and re-writing the whole 57MB workbook via a JS library), and it turned out to silently
+    flatten pivot tables and some formulas elsewhere in the file — not safe for a file this complex.</p>
+  <p style="margin:0 0 8px;font-size:13px;opacity:.85">Instead: once you've downloaded and checked Step 6's
+    <code>MTC_Import_Rows.xlsx</code>, tell Claude it's ready. Claude drives your actual installed Excel
+    (via automation, the same way it inspected your files earlier) to extend the formula rows and paste the new
+    values in — real Excel does the writing, so pivot tables, XLOOKUP formulas, and formatting elsewhere in the
+    workbook are never at risk. It always saves as a new file; your original master file is not modified.</p>
+</div>
+
+<script>
+// ---- Reference data extracted from Sales-Data-MTC-Mthly Rate.xlsx (small, mostly static lookup sheets) ----
+
+// Customer Details sheet: Cust ID -> Region
+const CUSTOMER_REGION = {
+"A002":"2D","A020":"0B","A025":"0B","A027":"1O","B001":"2F","B002":"2F","B019":"6A","B020":"6A","B033":"0B","B036":"0E",
+"C005":"6A","C018":"0B","C021":"1O","C022":"1F","C024":"6B","C025":"1L","C027":"6A","C028":"6B","C032":"4C","C033":"5A",
+"C038":"1F","C041":"5B","C045":"0F","D002":"0B","D014":"0B","D019":"0B","D021":"6A","E005":"2E","E007":"2E","E018":"2E",
+"F024":"5B","F033":"10","F029":"0E","G006":"6A","H002":"6B","H020":"0B","H025":"6A","H028":"6A","H029":"6A","I006":"6B",
+"I012":"0F","J009":"6A","J010":"6B","K013":"0B","K016":"0E","L009":"0B","L015":"6B","L019":"6B","M001":"6A","M006":"1E",
+"M008":"0B","M009":"0B","M010":"1F","M011":"1A","M012":"6B","M032":"5A","M035":"5A","M036":"0E","M042":"1E","M045":"1A",
+"M047":"6A","M048":"1Q","M049":"1Q","M051":"5A","M060":"0F","M061":"5A","M062":"1E","M064":"1Q","M067":"0B","M068":"1D",
+"M076":"1L","M081":"4C","M083":"0F","M084":"6A","M203":"1A","M220":"1J","N001":"2M","N008":"1F","N009":"1F","N011":"6A",
+"O010":"1F","P004":"0E","P019":"0B","P020":"0F","P021":"3A","P022":"3A","P025":"1O","P026":"6A","Q001":"6A","Q002":"0F",
+"Q003":"0B","Q004":"0F","Q006":"0B","Q007":"0F","R015":"0B","S001":"0J","S018":"6A","S029":"6A","S030":"6B","S039":"0J",
+"S042":"5B","S-GBP":"NIL","S-USD":"NIL","T016":"0B","T022":"0B","T027":"0F","T030":"6A","T035":"0E","V006":"0I","W005":"0B",
+"W014":"0B","W019":"6A","W021":"6B","W028":"6B","W029":"6A","Y003":"6A","Z001":"6B","Z002":"1Q"
+};
+
+// COO sheet: last character of a 7-char SKU -> Country of Origin
+const COO_SUFFIX = {
+"A":"USA","B":"BANGLADESH","C":"CHINA","D":"CANADA","E":"TURKEY","I":"ITALY","K":"KOREA","L":"SRI LANKA","N":"INDIA",
+"P":"PORTUGAL","R":"PERU (Mazal Corp. S.A.)","S":"INDONESIA","T":"THAILAND","U":"UK","V":"VIETNAM","W":"TAIWAN",
+"Y":"THAILAND-CE produced for THAILAND-AAP","Z":"CHINA-CE produced for THAILAND-AAP",
+"0":"CHINA","1":"CHINA","2":"CHINA","3":"CHINA","4":"CHINA","5":"CHINA","6":"CHINA","7":"CHINA","8":"CHINA","9":"CHINA"
+};
+
+// Target "MTC Sales Details" header row, columns A..CY (103 columns), 0-indexed
+const TARGET_HEADERS = [
+"Key","Invoice","Invm_date","yyyy-mm","Ship_Code","Ship_to","Division Code","Division Desc","Factory","Division",
+"Cust_id","Cust_name","Region","Cust_Countries","Terms","Open a/c ; L/C ; T/T","FOB","Related Party","Subsidiary","Family",
+"Family1","Part_id","Part_desc1","Part_desc2","Webspec_Desc","Part_desc3","Comm_code","Part No = ?????-?","SKU_qty","no of pans",
+"Ttl  Pans","Web UOM","Ttl Pans (UOM)","Unit_Price_Inv","Net_Price_Inv","curr","rate","Unit_Price_USD","Net_Unit_Price_USD","Sales_Inv",
+"Ttl_Commission1_Inv","Ttl_Commission2_Inv","Ttl_Direct Commission_Inv","Ttl_Defective_Allowance_Inv","Ttl_Return_Rebate_Inv","Ttl_Disc_Rebate_Inv","Ttl_Royalty_Inv","Net_Sales_Inv","Sales_USD","Net_Sales_USD",
+"Matl_USD","Labor_USD","Matl_brdn_USD","Labor_brdn_USD","Subcon_cost_USD","Prime_USD","Gross_Cont_USD","Gross_Cont_%","Net_Cont_USD","Net_Cont_%",
+"Dupont Rebate (USD/unit)","Ttl Dupont Rebate (USD)","Alum Rebate (USD/unit)","Ttl Alum Rebate (USD)","Prime Cost After Rebates (USD)","Net Cont After Rebates (USD)","Net Cont After Rebates (%)","Family Category","Meyer Brand","Database",
+"yyyy-mm2","Year","Ttl PO USD","VEND_ID","VEND_NAME","VEND NAME 1","PO_CURR","LST_RCP_PR (ORI CUR)","TTLLST_RCP_PR (ORI CUR)","SO_NO",
+"PO_NO","PO Rate","U / PO USD","U / PO Comm + PO deduct USD","TTL PO USD3","TTL PO GROSS CONT USD","TTL PO NET CONT USD","TTL PO NET CONT %","Net Net Price (Fcy)","Total Net Net Sales (USD)",
+"Total Net Net Margin (USD)","unit prime usd","unit po usd","Monthly","comm len","Check QTY","SKU /PART","CHECK BLANK","Qtr","Fabrication Code",
+"Fabrication Desc","Country of origin","Invoice_date"
+];
+
+// Target "Net Selling Price" header row, columns A..AR (44 columns), 0-indexed
+const NSP_HEADERS = [
+"Key","INV_NO","INVM_DT","REASON_CD","CURR_CODE","CUST_ID","CUST_NAME","ORD_NBR","CUS_PO_NBR","FAMILY",
+"FAMILY CODE","ITEM_DESC","PART_ID","IVR_QTY","F_UNIT_PRC","AMT","Shipcode","DEDUCT FROM INVOICE","TTL DEDUCT FROM INVOICE","Unit_COMMISSION",
+"COMMISSION_ TTL","PAID TO","Unit_COMMISSION_2","COMMISSION_ TTL_2","PAID TO_2","Unit_RETURN_REBATE","Return_REBATE_TTL","Unit Disc. Rebate","Disc. Rebate TTL","Unit_ROYALTY",
+"ROYALTY TTL","Net Selling Price","Unit_Customer_Accrual","Customer Accrual TTL","NET NET SELLING PRICE","CHECK","MONTHLY","TOTAL NET","TOTAL NET NET","Rate",
+"NET Selling Price USD","TOTAL NET (USD)","NET NET SELLING PRICE (USD)","TOTAL NET NET (USD)"
+];
+
+// Exchange Rate sheet: currency -> column (B:J), in order
+const FX_CURRENCIES = ["AUD","CAD","CNY","EUR","GBP","JPY","NTD","THB"];
+
+// Target "PO comm" header row, columns A..AI (35 columns), 0-indexed
+const POCOMM_HEADERS = [
+"COMPANY","TRAN_DATE","VENDOR_ID","VENDOR_NAME","BUYER","ORDER_NO","ORDER_LINE","PO_DATE","VINV_NO","VINV_DATE",
+"PACKSLIP","REFERENCE","STOCK_ID","TERMS","PART_NO","PART_DESC","COMM_CODE","REC_QTY","PO_UOM","PO_CUR",
+"PO_COST","TOT_FOR_PO","TOT_HKD_PO","AVG_COST","TOT_AVG_COST","PPV","EXCH_RATE","DEDUCT FROM AP INVOICE","TTL DEDUCT FROM AP INVOICE","Unit PURCHASE COMMISSION PAID TO 3RD PARTY",
+"TTL PURCHASE COMMISSION PAID TO 3RD PARTY","Paid To PURCHASE COMMISSION PAID TO 3RD PARTY","TTL UNIT COST","TTL COST","PO+SKU+QTY"
+];
+
+let generatedRows = null;       // Step 1 output (Sales Details)
+let warningList = [];
+
+let masterWorkbook = null;      // cached parsed workbook from Step 2
+let masterLastRow = null;       // MTC Sales Details last row
+let masterNSPLastRow = null;    // Net Selling Price last row
+let masterPOLastRow = null;     // PO comm last row
+
+let fxYYYYMM = null;            // Step 3 output
+let fxRates = null;             // { AUD: 5.6, ... }
+let fxWarningList = [];
+let fxMasterRow = null;         // matching row in master's Exchange Rate sheet, if found
+
+let commissionRows = null;      // Step 4 output (Net Selling Price rows)
+let commWarningList = [];
+
+let poCommRows = null;          // Step 5 output (PO comm rows)
+let poWarningList = [];
+
+document.getElementById('ivrFile').addEventListener('change', () => {
+  document.getElementById('processBtn').disabled = !document.getElementById('ivrFile').files.length;
+});
+document.getElementById('masterFile').addEventListener('change', detectNextRow);
+document.getElementById('processBtn').addEventListener('click', processFile);
+document.getElementById('fxFile').addEventListener('change', processExchangeRate);
+document.getElementById('commFile').addEventListener('change', processCommission);
+document.getElementById('poFile').addEventListener('change', processPOComm);
+document.getElementById('downloadBtn').addEventListener('click', downloadOutput);
+
+function excelSerialToDate(serial) {
+  const utcDays = Math.floor(serial - 25569);
+  return new Date(utcDays * 86400 * 1000);
+}
+function excelSerialToQuarter(serial) {
+  if (!serial || isNaN(serial)) return "";
+  const month = excelSerialToDate(serial).getUTCMonth() + 1;
+  return Math.ceil(month / 3);
+}
+function excelSerialToYYYYMM(serial) {
+  if (!serial || isNaN(serial)) return "";
+  const d = excelSerialToDate(serial);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function updateFinalSummary() {
+  const parts = [];
+  if (generatedRows && generatedRows.length) parts.push(`<span class="badge blue">MTC Sales Details: ${generatedRows.length} rows</span>`);
+  else parts.push(`<span class="badge gray">MTC Sales Details: not run</span>`);
+
+  if (fxRates) parts.push(`<span class="badge blue">Exchange Rate: ${fxYYYYMM}</span>`);
+  else parts.push(`<span class="badge gray">Exchange Rate: not run</span>`);
+
+  if (commissionRows && commissionRows.length) parts.push(`<span class="badge blue">Net Selling Price: ${commissionRows.length} rows</span>`);
+  else parts.push(`<span class="badge gray">Net Selling Price: not run</span>`);
+
+  if (poCommRows && poCommRows.length) parts.push(`<span class="badge blue">PO comm: ${poCommRows.length} rows</span>`);
+  else parts.push(`<span class="badge gray">PO comm: not run</span>`);
+
+  document.getElementById('finalSummary').innerHTML = parts.join(" ");
+  const anyReady = (generatedRows && generatedRows.length) || fxRates || (commissionRows && commissionRows.length) || (poCommRows && poCommRows.length);
+  document.getElementById('downloadBtn').disabled = !anyReady;
+}
+updateFinalSummary();
+
+// ---------------- Step 2: master workbook detection ----------------
+
+function findLastRowByColumn(ws, colIndex, fromRowIdx0) {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+  let lastRow = 0;
+  for (let i = fromRowIdx0; i < rows.length; i++) {
+    const v = rows[i][colIndex];
+    if (v !== "" && v != null) lastRow = i + 1; // 1-based sheet row
+  }
+  return lastRow;
+}
+
+function detectFxMasterRow() {
+  if (!masterWorkbook || !fxYYYYMM) { fxMasterRow = null; return; }
+  const ws = masterWorkbook.Sheets["Exchange Rate"];
+  if (!ws) { fxMasterRow = null; return; }
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+  fxMasterRow = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][1] || "").trim() === fxYYYYMM) { fxMasterRow = i + 1; break; }
+  }
+  renderFxResults();
+}
+
+function detectNextRow() {
+  const file = document.getElementById('masterFile').files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('detectStatus');
+  statusEl.textContent = "Reading master file (this can take up to ~30s for a large workbook)...";
+  statusEl.className = "";
+  masterWorkbook = null;
+  masterLastRow = null;
+  masterNSPLastRow = null;
+  masterPOLastRow = null;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: "array" });
+      masterWorkbook = wb;
+
+      const msgs = [];
+
+      if (wb.SheetNames.includes("MTC Sales Details")) {
+        masterLastRow = findLastRowByColumn(wb.Sheets["MTC Sales Details"], 1, 1); // col B, data from row2 (idx1)
+        if (masterLastRow) {
+          document.getElementById('startRow').value = masterLastRow + 1;
+          msgs.push(`MTC Sales Details: last row ${masterLastRow} → next row ${masterLastRow + 1}.`);
+        } else {
+          msgs.push(`MTC Sales Details: couldn't find any Invoice values in column B.`);
+        }
+      } else {
+        msgs.push(`Sheet "MTC Sales Details" not found.`);
+      }
+
+      if (wb.SheetNames.includes("Net Selling Price")) {
+        masterNSPLastRow = findLastRowByColumn(wb.Sheets["Net Selling Price"], 1, 2); // col B, data from row3 (idx2)
+        msgs.push(masterNSPLastRow
+          ? `Net Selling Price: last row ${masterNSPLastRow} → next row ${masterNSPLastRow + 1}.`
+          : `Net Selling Price: couldn't find any INV_NO values in column B.`);
+      } else {
+        msgs.push(`Sheet "Net Selling Price" not found.`);
+      }
+
+      if (!wb.SheetNames.includes("Exchange Rate")) {
+        msgs.push(`Sheet "Exchange Rate" not found.`);
+      }
+
+      if (wb.SheetNames.includes("PO comm")) {
+        masterPOLastRow = findLastRowByColumn(wb.Sheets["PO comm"], 5, 1); // col F (ORDER_NO), data from row2 (idx1)
+        msgs.push(masterPOLastRow
+          ? `PO comm: last row ${masterPOLastRow} → next row ${masterPOLastRow + 1}.`
+          : `PO comm: couldn't find any ORDER_NO values in column F.`);
+      } else {
+        msgs.push(`Sheet "PO comm" not found.`);
+      }
+
+      statusEl.textContent = msgs.join(" ");
+      statusEl.className = "ok";
+
+      detectFxMasterRow();
+      renderCommResults();
+      renderPOResults();
+    } catch (err) {
+      statusEl.textContent = "Error reading master file: " + err.message;
+      statusEl.className = "err";
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ---------------- Step 1: IVR032 -> MTC Sales Details ----------------
+
+function processFile() {
+  const file = document.getElementById('ivrFile').files[0];
+  const startRow = parseInt(document.getElementById('startRow').value, 10) || null;
+  document.getElementById('status').textContent = "Reading file...";
+  document.getElementById('processBtn').disabled = true;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: "array" });
+      const sheetName = wb.SheetNames.includes("Page1") ? "Page1" : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+
+      warningList = [];
+      let skippedNonMTC = 0;
+      const outRows = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r[1] === "" || r[1] == null) continue; // col B = INVOICE, required
+
+        const company = String(r[0] || "").trim().toUpperCase();
+        if (company && company !== "MTC") { skippedNonMTC++; continue; }
+
+        const partId = String(r[7] || "").trim();   // H PART_ID
+        const isSku = partId.length === 7;
+        const cs = isSku ? "SKU_No" : "Part No.";
+
+        let coo = "";
+        if (isSku) {
+          const suf = partId.slice(-1).toUpperCase();
+          coo = COO_SUFFIX[suf] || "";
+          if (!coo) warningList.push(`Part_id "${partId}" (invoice ${r[1]}): unrecognised COO suffix "${suf}" — verify Country of Origin manually.`);
+        } else {
+          coo = "CHINA";
+        }
+
+        const custId = String(r[5] || "").trim();   // F CUST_ID
+        const region = CUSTOMER_REGION[custId] || "";
+        if (!region) warningList.push(`Cust_id "${custId}" (invoice ${r[1]}): not found in Customer Details reference — Region left blank, verify manually.`);
+
+        const invDateSerial = r[3]; // D INV_DATE
+        const qtr = excelSerialToQuarter(invDateSerial);
+
+        const out = new Array(103).fill("");
+        out[1]   = r[1];        // B  Invoice          <- IVR032 INVOICE (B)
+        out[2]   = r[3];        // C  Invm_date        <- IVR032 INV_DATE (D)
+        out[4]   = r[45];       // E  Ship_Code        <- IVR032 SHIP_CODE (AT)
+        out[5]   = r[46];       // F  Ship_to          <- IVR032 COUNTRY (AU)
+        out[10]  = custId;      // K  Cust_id          <- IVR032 CUST_ID (F)
+        out[11]  = r[6];        // L  Cust_name        <- IVR032 CUST_NAME (G)
+        out[12]  = region;      // M  Region           <- derived (Customer Details)
+        out[21]  = partId;      // V  Part_id          <- IVR032 PART_ID (H)
+        out[23]  = r[8];        // X  Part_desc2       <- IVR032 PART_DESC (I)
+        out[28]  = r[10];       // AC SKU_qty          <- IVR032 QTY (K)
+        out[33]  = r[11];       // AH Unit_Price_Inv   <- IVR032 UNIT_PRICE (L)
+        out[35]  = r[18];       // AJ curr             <- IVR032 CURR (S)
+        out[51]  = r[14];       // AZ Labor_USD        <- IVR032 LABOR_COST (O)
+        out[52]  = r[15];       // BA Matl_brdn_USD    <- IVR032 MATL_BRDN (P)
+        out[53]  = r[16];       // BB Labor_brdn_USD   <- IVR032 LABOR_BRDN (Q)
+        out[54]  = r[17];       // BC Subcon_cost_USD  <- IVR032 SUBCONCOST (R)
+        out[73]  = r[36];       // BV VEND_ID          <- IVR032 VEND_ID (AK)
+        out[74]  = r[37];       // BW VEND_NAME        <- IVR032 VEND_NAME (AL)
+        out[76]  = r[38];       // BY PO_CURR          <- IVR032 PO_CURR (AM)
+        out[77]  = r[39];       // BZ LST_RCP_PR       <- IVR032 LST_RCP_PR (AN)
+        out[79]  = r[40];       // CB SO_NO            <- IVR032 SO_NO (AO)
+        out[80]  = r[42];       // CC PO_NO            <- IVR032 PO_NO (AQ)
+        out[98]  = qtr;         // CU Qtr              <- derived from Invoice date
+        out[101] = coo;         // CX Country of origin <- derived (COO suffix table / Part No. default)
+        out[102] = r[3];        // CY Invoice_date     <- IVR032 INV_DATE (D)
+
+        out._cs = cs; // helper for preview only, stripped before export
+        outRows.push(out);
+      }
+
+      generatedRows = outRows;
+      renderIvrResults(outRows, warningList, skippedNonMTC, startRow);
+      updateFinalSummary();
+      document.getElementById('status').textContent = "Done.";
+    } catch (err) {
+      document.getElementById('status').textContent = "Error: " + err.message;
+      console.error(err);
+    } finally {
+      document.getElementById('processBtn').disabled = false;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderIvrResults(outRows, warnings, skippedNonMTC, startRow) {
+  document.getElementById('ivrResults').style.display = 'block';
+
+  const skuCount = outRows.filter(r => r._cs === "SKU_No").length;
+  const partCount = outRows.length - skuCount;
+
+  document.getElementById('summary').innerHTML = `
+    <span class="badge blue">${outRows.length} rows ready</span>
+    <span class="badge blue">${skuCount} SKU_No</span>
+    <span class="badge blue">${partCount} Part No.</span>
+    ${skippedNonMTC ? `<span class="badge amber">${skippedNonMTC} non-MTC rows skipped</span>` : ""}
+    ${startRow ? `<p style="margin-top:8px">These will land at rows <code>${startRow}</code>–<code>${startRow + outRows.length - 1}</code> in the master sheet.</p>` : ""}
+  `;
+
+  const warnBox = document.getElementById('warnings');
+  if (warnings.length === 0) {
+    warnBox.innerHTML = `<span class="ok">No warnings — all customers and SKU suffixes were recognised.</span>`;
+  } else {
+    const shown = warnings.slice(0, 50);
+    warnBox.innerHTML = `<ul class="warn">${shown.map(w => `<li>${w}</li>`).join('')}</ul>` +
+      (warnings.length > 50 ? `<p>...and ${warnings.length - 50} more.</p>` : "");
+  }
+
+  const previewCols = [1,2,4,5,10,11,12,21,23,28,33,35,51,52,53,54,73,74,76,77,79,80,98,101,102];
+  const table = document.getElementById('previewTable');
+  let thead = "<tr><th>#</th>" + previewCols.map(i => `<th>${TARGET_HEADERS[i]}</th>`).join('') + "</tr>";
+  let tbody = outRows.slice(0, 200).map((r, idx) =>
+    "<tr><td>" + (idx+1) + "</td>" + previewCols.map(i => `<td>${r[i] ?? ""}</td>`).join('') + "</tr>"
+  ).join('');
+  table.innerHTML = thead + tbody;
+  if (outRows.length > 200) {
+    table.innerHTML += `<tr><td colspan="${previewCols.length+1}">...and ${outRows.length - 200} more rows (full data included in download)</td></tr>`;
+  }
+}
+
+// ---------------- Step 3: monthly exchange rate -> Exchange Rate ----------------
+
+function processExchangeRate() {
+  const file = document.getElementById('fxFile').files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('fxStatus');
+  statusEl.textContent = "Reading file...";
+  statusEl.className = "";
+
+  const m = file.name.match(/(\d{4})[-_]?(\d{2})/);
+  if (!m) {
+    statusEl.textContent = `Couldn't find a YYYY-MM pattern in the filename "${file.name}" — rename it to match "STANDARD EXCHANGE RATE-YYYY-MM".`;
+    statusEl.className = "err";
+    fxRates = null; fxYYYYMM = null;
+    updateFinalSummary();
+    return;
+  }
+  fxYYYYMM = `${m[1]}-${m[2]}`;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: "array" });
+      const sheetName = wb.SheetNames.includes("Exchange rate table") ? "Exchange rate table" : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+
+      fxWarningList = [];
+      const rates = {};
+      const seen = new Set();
+
+      for (let i = 12; i <= 23; i++) { // rows 13..24 (1-based) = array index 12..23
+        const r = rows[i];
+        if (!r) continue;
+        const code = String(r[2] || "").trim().toUpperCase(); // column C
+        const rate = r[4]; // column E
+        if (!code) continue;
+        seen.add(code);
+        if (FX_CURRENCIES.includes(code)) {
+          rates[code] = rate;
+        }
+      }
+
+      const missing = FX_CURRENCIES.filter(c => rates[c] === undefined || rates[c] === "");
+      if (missing.length) fxWarningList.push(`No rate found for: ${missing.join(", ")}.`);
+      const skipped = [...seen].filter(c => !FX_CURRENCIES.includes(c));
+      if (skipped.length) fxWarningList.push(`Currencies present in the source but not mapped to a B:J column (skipped, per instructions): ${skipped.join(", ")}.`);
+
+      fxRates = rates;
+      detectFxMasterRow(); // also calls renderFxResults()
+      renderFxResults();
+      updateFinalSummary();
+      statusEl.textContent = `Done — month ${fxYYYYMM}.`;
+      statusEl.className = "ok";
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+      statusEl.className = "err";
+      fxRates = null;
+      updateFinalSummary();
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderFxResults() {
+  if (!fxRates) { document.getElementById('fxResults').style.display = 'none'; return; }
+  document.getElementById('fxResults').style.display = 'block';
+
+  document.getElementById('fxSummary').innerHTML = `
+    <span class="badge blue">Month: ${fxYYYYMM}</span>
+    ${fxMasterRow ? `<span class="badge blue">Matches master row ${fxMasterRow}</span>`
+                  : `<span class="badge amber">No matching row found in master's Exchange Rate sheet${masterWorkbook ? "" : " (upload master file in Step 2 to check)"}</span>`}
+  `;
+
+  const warnBox = document.getElementById('fxWarnings');
+  warnBox.innerHTML = fxWarningList.length
+    ? `<ul class="warn">${fxWarningList.map(w => `<li>${w}</li>`).join('')}</ul>`
+    : `<span class="ok">No warnings.</span>`;
+
+  const table = document.getElementById('fxTable');
+  table.innerHTML = "<tr><th>yyyy-mm</th>" + FX_CURRENCIES.map(c => `<th>${c}</th>`).join('') + "</tr>" +
+    "<tr><td>" + fxYYYYMM + "</td>" + FX_CURRENCIES.map(c => `<td>${fxRates[c] ?? ""}</td>`).join('') + "</tr>";
+}
+
+// ---------------- Step 4: Sales & Commission Report -> Net Selling Price ----------------
+
+function processCommission() {
+  const file = document.getElementById('commFile').files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('commStatus');
+  statusEl.textContent = "Reading file...";
+  statusEl.className = "";
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: "array" });
+      const sheetName = wb.SheetNames.includes("Combined") ? "Combined" : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+
+      commWarningList = [];
+      let skippedNonMTC = 0;
+      const outRows = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r[1] === "" || r[1] == null) continue; // col B = INV_NO, required
+
+        const company = String(r[0] || "").trim().toUpperCase();
+        if (company && company !== "MTC") { skippedNonMTC++; continue; }
+
+        const out = new Array(44).fill("");
+        for (let c = 1; c <= 34; c++) out[c] = r[c]; // B:AI copied straight across
+        out[36] = excelSerialToYYYYMM(r[2]);          // AK Monthly <- INVM_DT (C)
+        outRows.push(out);
+      }
+
+      commissionRows = outRows;
+      renderCommResults(skippedNonMTC);
+      updateFinalSummary();
+      statusEl.textContent = "Done.";
+      statusEl.className = "ok";
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+      statusEl.className = "err";
+      commissionRows = null;
+      updateFinalSummary();
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderCommResults(skippedNonMTC) {
+  if (!commissionRows) { document.getElementById('commResults').style.display = 'none'; return; }
+  document.getElementById('commResults').style.display = 'block';
+
+  document.getElementById('commSummary').innerHTML = `
+    <span class="badge blue">${commissionRows.length} rows ready</span>
+    ${skippedNonMTC ? `<span class="badge amber">${skippedNonMTC} non-MTC rows skipped</span>` : ""}
+    ${masterNSPLastRow ? `<p style="margin-top:8px">These will land at rows <code>${masterNSPLastRow + 1}</code>–<code>${masterNSPLastRow + commissionRows.length}</code> in the master sheet.</p>`
+                        : `<p style="margin-top:8px">Upload the master file in Step 2 to see the exact target rows.</p>`}
+  `;
+
+  document.getElementById('commWarnings').innerHTML = commWarningList.length
+    ? `<ul class="warn">${commWarningList.map(w => `<li>${w}</li>`).join('')}</ul>`
+    : `<span class="ok">No warnings.</span>`;
+
+  const previewCols = [1,2,4,5,6,9,12,13,14,16,31,34,36];
+  const table = document.getElementById('commTable');
+  let thead = "<tr><th>#</th>" + previewCols.map(i => `<th>${NSP_HEADERS[i]}</th>`).join('') + "</tr>";
+  let tbody = commissionRows.slice(0, 200).map((r, idx) =>
+    "<tr><td>" + (idx+1) + "</td>" + previewCols.map(i => `<td>${r[i] ?? ""}</td>`).join('') + "</tr>"
+  ).join('');
+  table.innerHTML = thead + tbody;
+  if (commissionRows.length > 200) {
+    table.innerHTML += `<tr><td colspan="${previewCols.length+1}">...and ${commissionRows.length - 200} more rows (full data included in download)</td></tr>`;
+  }
+}
+
+// ---------------- Step 5: EPI_Purchase Commission Combined -> PO comm ----------------
+
+function processPOComm() {
+  const file = document.getElementById('poFile').files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('poStatus');
+  statusEl.textContent = "Reading file...";
+  statusEl.className = "";
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: "array" });
+      const sheetName = wb.SheetNames.includes("Combined") ? "Combined" : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+
+      poWarningList = [];
+      let skippedNonMTC = 0;
+      const outRows = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r[5] === "" || r[5] == null) continue; // col F = ORDER_NO, required
+
+        const company = String(r[0] || "").trim().toUpperCase();
+        if (company && company !== "MTC") { skippedNonMTC++; continue; }
+
+        const out = new Array(35).fill("");
+        for (let c = 0; c <= 33; c++) out[c] = r[c]; // A:AH copied straight across
+        out[34] = `${r[5]}${r[14]}${r[17]}`;          // AI PO+SKU+QTY <- ORDER_NO+PART_NO+REC_QTY
+        outRows.push(out);
+      }
+
+      poCommRows = outRows;
+      renderPOResults(skippedNonMTC);
+      updateFinalSummary();
+      statusEl.textContent = "Done.";
+      statusEl.className = "ok";
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+      statusEl.className = "err";
+      poCommRows = null;
+      updateFinalSummary();
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderPOResults(skippedNonMTC) {
+  if (!poCommRows) { document.getElementById('poResults').style.display = 'none'; return; }
+  document.getElementById('poResults').style.display = 'block';
+
+  document.getElementById('poSummary').innerHTML = `
+    <span class="badge blue">${poCommRows.length} rows ready</span>
+    ${skippedNonMTC ? `<span class="badge amber">${skippedNonMTC} non-MTC rows skipped</span>` : ""}
+    ${masterPOLastRow ? `<p style="margin-top:8px">These will land at rows <code>${masterPOLastRow + 1}</code>–<code>${masterPOLastRow + poCommRows.length}</code> in the master sheet.</p>`
+                       : `<p style="margin-top:8px">Upload the master file in Step 2 to see the exact target rows.</p>`}
+  `;
+
+  poWarningList = ["Columns AJ (TTL COST USD) and AK (Rate) are not simple formulas in the existing master data — fill/verify those manually after pasting."];
+  document.getElementById('poWarnings').innerHTML = `<ul class="warn">${poWarningList.map(w => `<li>${w}</li>`).join('')}</ul>`;
+
+  const previewCols = [1,2,3,5,7,14,15,17,19,20,33,34];
+  const table = document.getElementById('poTable');
+  let thead = "<tr><th>#</th>" + previewCols.map(i => `<th>${POCOMM_HEADERS[i]}</th>`).join('') + "</tr>";
+  let tbody = poCommRows.slice(0, 200).map((r, idx) =>
+    "<tr><td>" + (idx+1) + "</td>" + previewCols.map(i => `<td>${r[i] ?? ""}</td>`).join('') + "</tr>"
+  ).join('');
+  table.innerHTML = thead + tbody;
+  if (poCommRows.length > 200) {
+    table.innerHTML += `<tr><td colspan="${previewCols.length+1}">...and ${poCommRows.length - 200} more rows (full data included in download)</td></tr>`;
+  }
+}
+
+// ---------------- Step 6: combined 4-tab download ----------------
+
+function downloadOutput() {
+  const anyReady = (generatedRows && generatedRows.length) || fxRates || (commissionRows && commissionRows.length) || (poCommRows && poCommRows.length);
+  if (!anyReady) return;
+  const wb = XLSX.utils.book_new();
+
+  if (generatedRows && generatedRows.length) {
+    const salesAoa = [TARGET_HEADERS, ...generatedRows.map(r => r.slice(0, 103))];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salesAoa), "MTC Sales Details");
+  }
+
+  if (fxRates) {
+    const fxAoa = [
+      ["yyyy-mm", ...FX_CURRENCIES, "", "Target master row (if detected)"],
+      [fxYYYYMM, ...FX_CURRENCIES.map(c => fxRates[c] ?? ""), "", fxMasterRow ?? "not found"]
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fxAoa), "Exchange Rate");
+  }
+
+  if (commissionRows && commissionRows.length) {
+    const nspAoa = [NSP_HEADERS, ...commissionRows.map(r => r.slice(0, 44))];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(nspAoa), "Net Selling Price");
+  }
+
+  if (poCommRows && poCommRows.length) {
+    const poAoa = [POCOMM_HEADERS, ...poCommRows.map(r => r.slice(0, 35))];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(poAoa), "PO comm");
+  }
+
+  XLSX.writeFile(wb, "MTC_Import_Rows.xlsx");
+}
+</script>
+
+</body>
+</html>
