@@ -52,6 +52,22 @@ $POCOMM_EXPECTED_STATIC = @(36)                    # AJ (TTL COST USD) - already
 if (-not (Test-Path $MasterPath)) { throw "Master file not found: $MasterPath" }
 if (-not (Test-Path $ImportPath)) { throw "Import file not found: $ImportPath" }
 
+# Excel COM's Workbooks.Open() does not reliably resolve a relative path
+# against the calling PowerShell process's working directory - it falls back
+# to Excel's own internal "current folder" state instead (often wherever
+# Excel last had a file open, which has nothing to do with this script's
+# -OutputPath argument as typed). A bare filename like "Foo - UPDATED.xlsx"
+# can then fail to open with a generic "file not found" even though the file
+# is sitting right there, since Excel looked in the wrong folder for it.
+# Resolving every path to absolute here - before Copy-Item, before any COM
+# call - removes that ambiguity regardless of whether the caller passed a
+# relative or absolute path.
+$MasterPath = (Resolve-Path $MasterPath).Path
+$ImportPath = (Resolve-Path $ImportPath).Path
+if (-not [System.IO.Path]::IsPathRooted($OutputPath)) {
+  $OutputPath = Join-Path (Get-Location).Path $OutputPath
+}
+
 Write-Output "Copying master file to output path (original is never modified)..."
 Copy-Item $MasterPath $OutputPath -Force
 
@@ -63,12 +79,22 @@ $excel.ScreenUpdating = $false
 $excel.EnableEvents = $false
 
 function Open-WB($path, $readOnly) {
+  # A freshly Copy-Item'd multi-ten-MB file on a OneDrive-synced folder can
+  # stay briefly locked while OneDrive notices the change and scans/uploads
+  # it - 3 attempts at 1 second apart (3 seconds total) turned out not to be
+  # a long enough window and failed intermittently even though the exact
+  # same Open() call against the exact same file succeeded moments later
+  # when retried by hand. 10 attempts at 2 seconds apart (up to 20 seconds)
+  # comfortably covers that. The real COM exception is also surfaced now
+  # instead of silently swallowed - the generic "could not open" message
+  # alone gave no way to tell a lock from any other failure.
   $wb = $null
-  for ($attempt = 1; $attempt -le 3 -and $wb -eq $null; $attempt++) {
+  $lastError = $null
+  for ($attempt = 1; $attempt -le 10 -and $wb -eq $null; $attempt++) {
     try { $wb = $excel.Workbooks.Open($path, [Type]::Missing, $readOnly) }
-    catch { Start-Sleep -Milliseconds 1000 }
+    catch { $lastError = $_; Start-Sleep -Milliseconds 2000 }
   }
-  if ($wb -eq $null) { throw "Could not open $path after 3 attempts" }
+  if ($wb -eq $null) { throw "Could not open $path after 10 attempts. Last error: $lastError" }
   return $wb
 }
 

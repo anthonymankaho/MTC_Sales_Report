@@ -8,6 +8,7 @@ into the master workbook, and merging them in safely.
 ## Monthly processing steps
 
 1. **Download source files** from MMS/EPICOR (manual, unchanged):
+
    - `IVR032.xlsx` — sales export
    - `STANDARD EXCHANGE RATE-YYYY-MM.xls` — monthly FX rates
    - `EPI_Purchase Commission Combined.xlsx` — commission/PO data
@@ -20,6 +21,7 @@ into the master workbook, and merging them in safely.
 4. **Merge into the master** with [Combine-Into-Master.ps1](Combine-Into-Master.ps1):
 
    ```powershell
+   cd "C:\Users\User\Desktop\MTC Sales Report Claude"
    powershell -ExecutionPolicy Bypass -File Combine-Into-Master.ps1 `
      -MasterPath "Sales-Data-MTC-Mthly Rate.xlsx" `
      -ImportPath "MTC_Import_Rows.xlsx" `
@@ -65,24 +67,24 @@ the full write-up.
 
 ## Structure
 
-| Path | Purpose |
-|---|---|
-| `app/index.html` | Browser-based staging tool (Steps 1-3 of the SOP) |
-| `app/xlsx.full.min.js` | SheetJS library used by the tool to read/write `.xlsx` client-side |
-| `Combine-Into-Master.ps1` | PowerShell + Excel COM script that merges staged rows into the master (Step 4) |
-| `MTC Sales Report Import SOP.docx` | Full written procedure |
-| `Sales-Data-MTC-Mthly Rate.xlsx` | Current master workbook |
-| `Sales-Data-MTC-Mthly Rate - UPDATED.xlsx` | Output of the merge script for the current month |
-| `FIN_MTC Sales & Margin*.xlsx`, `FIN - MTC Sales & Margin Temp.xlsx` | Finance sales & margin report exports |
-| `Sales & Commission Report-MTC.xlsx` | Commission report |
-| `EPI_Purchase Commission Combined.xlsx` | Source: commission/PO data from EPICOR |
-| `IVR032.xlsx` | Source: monthly sales export |
-| `STANDARD EXCHANGE RATE-YYYY-MM.xls` | Source: monthly FX rate table |
-| `MTC_Import_Rows.xlsx` | Staged output from `app/index.html`, ready to merge |
-| `HTML_Report_Generator/Generate-MTCSalesReportHtml.ps1` | Extracts data from the finalized FIN_MTC workbook via Excel COM (read-only) |
-| `HTML_Report_Generator/build_report.js` | Node script that assembles the extracted data into the single-file interactive HTML report |
-| `HTML_Report_Generator/vendor/` | Vendored jQuery, DataTables, and Chart.js used by the generated report |
-| `FIN_MTC_Sales_Report_html_TEMP.html` | Output of the HTML report generator — the shareable interactive report |
+| Path                                                                     | Purpose                                                                                    |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `app/index.html`                                                       | Browser-based staging tool (Steps 1-3 of the SOP)                                          |
+| `app/xlsx.full.min.js`                                                 | SheetJS library used by the tool to read/write`.xlsx` client-side                        |
+| `Combine-Into-Master.ps1`                                              | PowerShell + Excel COM script that merges staged rows into the master (Step 4)             |
+| `MTC Sales Report Import SOP.docx`                                     | Full written procedure                                                                     |
+| `Sales-Data-MTC-Mthly Rate.xlsx`                                       | Current master workbook                                                                    |
+| `Sales-Data-MTC-Mthly Rate - UPDATED.xlsx`                             | Output of the merge script for the current month                                           |
+| `FIN_MTC Sales & Margin*.xlsx`, `FIN - MTC Sales & Margin Temp.xlsx` | Finance sales & margin report exports                                                      |
+| `Sales & Commission Report-MTC.xlsx`                                   | Commission report                                                                          |
+| `EPI_Purchase Commission Combined.xlsx`                                | Source: commission/PO data from EPICOR                                                     |
+| `IVR032.xlsx`                                                          | Source: monthly sales export                                                               |
+| `STANDARD EXCHANGE RATE-YYYY-MM.xls`                                   | Source: monthly FX rate table                                                              |
+| `MTC_Import_Rows.xlsx`                                                 | Staged output from`app/index.html`, ready to merge                                       |
+| `HTML_Report_Generator/Generate-MTCSalesReportHtml.ps1`                | Extracts data from the finalized FIN_MTC workbook via Excel COM (read-only)                |
+| `HTML_Report_Generator/build_report.js`                                | Node script that assembles the extracted data into the single-file interactive HTML report |
+| `HTML_Report_Generator/vendor/`                                        | Vendored jQuery, DataTables, and Chart.js used by the generated report                     |
+| `FIN_MTC_Sales_Report_html_TEMP.html`                                  | Output of the HTML report generator — the shareable interactive report                    |
 
 ## Notes
 
