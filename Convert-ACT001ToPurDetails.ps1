@@ -133,11 +133,25 @@ function Get-BulkValues($ws, $r1, $c1, $r2, $c2) {
   $nRows = $r2 - $r1 + 1
   $nCols = $c2 - $c1 + 1
   $out = New-Object 'object[,]' $nRows, $nCols
-  if ($nRows -eq 1 -and $nCols -eq 1) { $out[0,0] = $raw }
-  elseif ($nRows -eq 1) { for ($c = 0; $c -lt $nCols; $c++) { $out[0,$c] = $raw[1,$c+1] } }
-  elseif ($nCols -eq 1) { for ($r = 0; $r -lt $nRows; $r++) { $out[$r,0] = $raw[$r+1,1] } }
-  else { for ($r = 0; $r -lt $nRows; $r++) { for ($c = 0; $c -lt $nCols; $c++) { $out[$r,$c] = $raw[$r+1,$c+1] } } }
-  return $out
+  if ($raw -is [Array] -and $raw.Rank -eq 2) {
+    $rowBase = $raw.GetLowerBound(0)
+    $colBase = $raw.GetLowerBound(1)
+    for ($r = 0; $r -lt $nRows; $r++) {
+      for ($c = 0; $c -lt $nCols; $c++) {
+        $out.SetValue($raw.GetValue($rowBase + $r, $colBase + $c), $r, $c)
+      }
+    }
+  } elseif ($raw -is [Array] -and $raw.Rank -eq 1) {
+    $base = $raw.GetLowerBound(0)
+    if ($nRows -eq 1) {
+      for ($c = 0; $c -lt $nCols; $c++) { $out.SetValue($raw.GetValue($base + $c), 0, $c) }
+    } else {
+      for ($r = 0; $r -lt $nRows; $r++) { $out.SetValue($raw.GetValue($base + $r), $r, 0) }
+    }
+  } else {
+    $out.SetValue($raw, 0, 0)
+  }
+  return ,$out
 }
 
 function To-NumOrZero($v) {
@@ -241,7 +255,7 @@ try {
   $actVals = Get-BulkValues $wsAct 2 1 $actLastRow 27
   $newKeys = New-Object System.Collections.Generic.List[string]
   for ($r = 0; $r -lt $n; $r++) {
-    $k = (To-KeyText $actVals[$r, $SRC.ORDER_NO-1]) + (To-KeyText $actVals[$r, $SRC.PART_NO-1]) + (To-KeyText $actVals[$r, $SRC.REC_QTY-1])
+    $k = (To-KeyText $actVals[$r, ($SRC.ORDER_NO - 1)]) + (To-KeyText $actVals[$r, ($SRC.PART_NO - 1)]) + (To-KeyText $actVals[$r, ($SRC.REC_QTY - 1)])
     $newKeys.Add($k)
   }
 
@@ -266,7 +280,7 @@ try {
   $pcVals = Get-BulkValues $wsPC 2 1 $pcLastRow $pcLastCol
   $pcByKey = @{}
   for ($r = 0; $r -lt $pcVals.GetLength(0); $r++) {
-    $k = "$($pcVals[$r, $PC_KEY_COL-1])".Trim()
+    $k = "$($pcVals[$r, ($PC_KEY_COL - 1)])".Trim()
     if ($k -ne "") { $pcByKey[$k] = $r }
   }
   Write-Log "Pur_Combined '$PurCombinedSheet': $($pcVals.GetLength(0)) rows indexed by composite key."
@@ -307,41 +321,41 @@ try {
   $missingFxCount = 0
   $unmappedVendors = New-Object 'System.Collections.Generic.HashSet[string]'
   for ($r = 0; $r -lt $n; $r++) {
-    $block[$r, $TGT.B  - 2] = $actVals[$r, $SRC.TRAN_DATE-1]
-    $vendorId = "$($actVals[$r, $SRC.VENDOR_ID-1])".Trim()
-    $block[$r, $TGT.C  - 2] = $vendorId
-    $block[$r, $TGT.D  - 2] = $actVals[$r, $SRC.VENDOR_NAME-1]
-    $block[$r, $TGT.E  - 2] = $actVals[$r, $SRC.BUYER-1]
-    $block[$r, $TGT.F  - 2] = $actVals[$r, $SRC.ORDER_NO-1]
-    $block[$r, $TGT.G  - 2] = $actVals[$r, $SRC.PO_DATE-1]
-    $block[$r, $TGT.H  - 2] = $actVals[$r, $SRC.REFERENCE-1]
-    $block[$r, $TGT.I  - 2] = $actVals[$r, $SRC.STOCK_ID-1]
-    $block[$r, $TGT.J  - 2] = $actVals[$r, $SRC.TERMS-1]
-    $block[$r, $TGT.K  - 2] = $actVals[$r, $SRC.PART_NO-1]
-    $block[$r, $TGT.L  - 2] = $null                               # Part Desc1 - left blank, no ACT001 equivalent
-    $block[$r, $TGT.M  - 2] = $actVals[$r, $SRC.PART_DESC-1]
-    $block[$r, $TGT.N  - 2] = $actVals[$r, $SRC.COMM_CODE-1]
-    $block[$r, $TGT.O  - 2] = $actVals[$r, $SRC.REC_QTY-1]
-    $block[$r, $TGT.P  - 2] = $actVals[$r, $SRC.PO_UOM-1]
-    $poCur = "$($actVals[$r, $SRC.PO_CUR-1])".Trim()
-    $block[$r, $TGT.Q  - 2] = $poCur
-    $block[$r, $TGT.R  - 2] = $actVals[$r, $SRC.PO_COST-1]
-    $block[$r, $TGT.S  - 2] = $actVals[$r, $SRC.TOT_FOR_PO-1]
-    $block[$r, $TGT.T  - 2] = $actVals[$r, $SRC.TOT_HKD_PO-1]
-    $block[$r, $TGT.U  - 2] = $actVals[$r, $SRC.AVG_COST-1]
-    $block[$r, $TGT.V  - 2] = $actVals[$r, $SRC.TOT_AVG_COST-1]
-    $block[$r, $TGT.W  - 2] = $actVals[$r, $SRC.PPV-1]
-    $block[$r, $TGT.X  - 2] = $actVals[$r, $SRC.EXCH_RATE-1]
-    $block[$r, $TGT.Y  - 2] = $null                                # Order Type - left blank, no ACT001 equivalent
+    $block[$r, ($TGT.B - 2)] = $actVals[$r, ($SRC.TRAN_DATE - 1)]
+    $vendorId = "$($actVals[$r, ($SRC.VENDOR_ID - 1)])".Trim()
+    $block[$r, ($TGT.C - 2)] = $vendorId
+    $block[$r, ($TGT.D - 2)] = $actVals[$r, ($SRC.VENDOR_NAME - 1)]
+    $block[$r, ($TGT.E - 2)] = $actVals[$r, ($SRC.BUYER - 1)]
+    $block[$r, ($TGT.F - 2)] = $actVals[$r, ($SRC.ORDER_NO - 1)]
+    $block[$r, ($TGT.G - 2)] = $actVals[$r, ($SRC.PO_DATE - 1)]
+    $block[$r, ($TGT.H - 2)] = $actVals[$r, ($SRC.REFERENCE - 1)]
+    $block[$r, ($TGT.I - 2)] = $actVals[$r, ($SRC.STOCK_ID - 1)]
+    $block[$r, ($TGT.J - 2)] = $actVals[$r, ($SRC.TERMS - 1)]
+    $block[$r, ($TGT.K - 2)] = $actVals[$r, ($SRC.PART_NO - 1)]
+    $block[$r, ($TGT.L - 2)] = $null                               # Part Desc1 - left blank, no ACT001 equivalent
+    $block[$r, ($TGT.M - 2)] = $actVals[$r, ($SRC.PART_DESC - 1)]
+    $block[$r, ($TGT.N - 2)] = $actVals[$r, ($SRC.COMM_CODE - 1)]
+    $block[$r, ($TGT.O - 2)] = $actVals[$r, ($SRC.REC_QTY - 1)]
+    $block[$r, ($TGT.P - 2)] = $actVals[$r, ($SRC.PO_UOM - 1)]
+    $poCur = "$($actVals[$r, ($SRC.PO_CUR - 1)])".Trim()
+    $block[$r, ($TGT.Q - 2)] = $poCur
+    $block[$r, ($TGT.R - 2)] = $actVals[$r, ($SRC.PO_COST - 1)]
+    $block[$r, ($TGT.S - 2)] = $actVals[$r, ($SRC.TOT_FOR_PO - 1)]
+    $block[$r, ($TGT.T - 2)] = $actVals[$r, ($SRC.TOT_HKD_PO - 1)]
+    $block[$r, ($TGT.U - 2)] = $actVals[$r, ($SRC.AVG_COST - 1)]
+    $block[$r, ($TGT.V - 2)] = $actVals[$r, ($SRC.TOT_AVG_COST - 1)]
+    $block[$r, ($TGT.W - 2)] = $actVals[$r, ($SRC.PPV - 1)]
+    $block[$r, ($TGT.X - 2)] = $actVals[$r, ($SRC.EXCH_RATE - 1)]
+    $block[$r, ($TGT.Y - 2)] = $null                                # Order Type - left blank, no ACT001 equivalent
 
     # AB: Monthly Exchange Rate - computed value (matches historical
     # precedent: every prior row holds a plain number here, not a live
     # formula - see the investigation notes).
     $curKey = $poCur.ToUpper()
     if ($fxRateByCurrency.ContainsKey($curKey)) {
-      $block[$r, $TGT.AB - 2] = $fxRateByCurrency[$curKey]
+      $block[$r, ($TGT.AB - 2)] = $fxRateByCurrency[$curKey]
     } else {
-      $block[$r, $TGT.AB - 2] = $null
+      $block[$r, ($TGT.AB - 2)] = $null
       $missingFxCount++
     }
 
@@ -354,11 +368,11 @@ try {
     $key = $newKeys[$r]
     if ($pcByKey.ContainsKey($key)) {
       $pcRow = $pcByKey[$key]
-      $deductAp = To-NumOrZero $pcVals[$pcRow, $PC_DEDUCT_AP_UNIT-1]
-      $comm3rd = To-NumOrZero $pcVals[$pcRow, $PC_COMM_3RD_UNIT-1]
-      $block[$r, $TGT.AE - 2] = -($deductAp + $comm3rd)
+      $deductAp = To-NumOrZero $pcVals[$pcRow, ($PC_DEDUCT_AP_UNIT - 1)]
+      $comm3rd = To-NumOrZero $pcVals[$pcRow, ($PC_COMM_3RD_UNIT - 1)]
+      $block[$r, ($TGT.AE - 2)] = -($deductAp + $comm3rd)
     } else {
-      $block[$r, $TGT.AE - 2] = 0
+      $block[$r, ($TGT.AE - 2)] = 0
       Write-Log "WARNING: no Pur_Combined match for composite key '$key' (row $($r+2) of $ACT001Sheet) - AE set to 0 for this row."
     }
 
@@ -436,7 +450,8 @@ try {
   $fmtDst = $wsPD.Range($wsPD.Cells($firstNewRow, 1), $wsPD.Cells($lastNewRow, $TGT.AP))
   $fmtSrc.Copy() | Out-Null
   $fmtDst.PasteSpecial($xlPasteFormats) | Out-Null
-  $excel.CutCopyMode = $false
+  # Do not set CutCopyMode here: Excel COM exposes an enum that rejects both
+  # Boolean $false and numeric 0 even though VBA accepts False to clear it.
 
   # Recalculate just this workbook so every formula above has a real value
   # before validation reads them back.

@@ -23,6 +23,22 @@ const dataSheet = readJson('data_sheet.json');
 const H = dataSheet.header;
 const COL = {};
 H.forEach((name, i) => { COL[name] = i; });
+const REQUIRED_HEADER_GROUPS = [
+  ['Year'], ['yyyy-mm'], ['Cust_name'], ['VEND_NAME'], ['Cust_Countries'],
+  ['Country of origin'], ['Net_Sales_USD'], ['Ttl PO USD', 'Matl_USD'],
+  ['TTL PO NET CONT USD', 'Net_Cont_USD'], ['Family Category'],
+  ['Fabrication Code'], ['Family1'], ['Part_id']
+];
+const missingHeaders = REQUIRED_HEADER_GROUPS
+  .filter(group => !group.some(name => Object.prototype.hasOwnProperty.call(COL, name)))
+  .map(group => group.join(' or '));
+if (missingHeaders.length) {
+  throw new Error('Missing required DATA header(s): ' + missingHeaders.join(', '));
+}
+function resolveColumnIndex(candidates) {
+  const name = candidates.find(candidate => Object.prototype.hasOwnProperty.call(COL, candidate));
+  return name === undefined ? -1 : COL[name];
+}
 console.log('Data loaded:', dataSheet.rows.length, 'rows,', H.length, 'cols');
 
 // ---- vendor assets ----
@@ -1096,8 +1112,8 @@ const vendIdx = COL['VEND_NAME'];
 const countryIdx = COL['Cust_Countries'];
 const originIdx = COL['Country of origin'];
 const salesIdx = COL['Net_Sales_USD'];
-const costIdx = COL['Ttl PO USD'];
-const marginIdx = COL['TTL PO NET CONT USD'];
+const costIdx = resolveColumnIndex(['Ttl PO USD', 'Matl_USD']);
+const marginIdx = resolveColumnIndex(['TTL PO NET CONT USD', 'Net_Cont_USD']);
 
 const dashRows = dataSheet.rows.map(r => [
   typeof r[yearIdx] === 'number' ? String(r[yearIdx]) : r[yearIdx],

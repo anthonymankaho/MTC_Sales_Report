@@ -326,7 +326,7 @@ function Export-FlatTable($ws, $headerRow, $dataStartRow, $lastCol, $fileName, $
 # own main column, so the table needs both. Many Family1 values map to the
 # same Family Category, never the reverse, so a flat last-write-wins
 # dictionary keyed by Family1 is enough - no aggregation needed here.
-$FAMILY_CATEGORY_SOURCE = "C:\Users\User\Desktop\MTC Purchase Report Claude\Sales-Data-MTC-Mthly Rate.xlsx"
+$FAMILY_CATEGORY_SOURCE = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx"))
 function Export-FamilyCategoryMap($excel, $fileName) {
   if (-not (Test-Path $FAMILY_CATEGORY_SOURCE)) {
     Write-Host "  WARNING: Family Category source not found at $FAMILY_CATEGORY_SOURCE - skipping (Prod Family tab will show blank brand column)"
@@ -336,12 +336,20 @@ function Export-FamilyCategoryMap($excel, $fileName) {
   $wb2 = $excel.Workbooks.Open($FAMILY_CATEGORY_SOURCE, [Type]::Missing, $true)
   try {
     $ws2 = $wb2.Worksheets.Item("MTC Sales Details")
-    $lastRow = $ws2.UsedRange.Row + $ws2.UsedRange.Rows.Count - 1
+    try { $sourceTable = $ws2.ListObjects.Item("MTC_Sales_Details") }
+    catch { throw "Required table 'MTC_Sales_Details' not found in $FAMILY_CATEGORY_SOURCE." }
+    try {
+      $familyColumn = $sourceTable.ListColumns.Item("Family1")
+      $categoryColumn = $sourceTable.ListColumns.Item("Family Category")
+    } catch {
+      throw "Required headers 'Family1' and/or 'Family Category' not found in table 'MTC_Sales_Details' in $FAMILY_CATEGORY_SOURCE."
+    }
+    $rowCount = $sourceTable.ListRows.Count
     $map = [ordered]@{}
-    for ($r = 2; $r -le $lastRow; $r++) {
-      $fam1 = $ws2.Cells($r, 21).Text.Trim()   # column U: Family1
+    for ($r = 1; $r -le $rowCount; $r++) {
+      $fam1 = $familyColumn.DataBodyRange.Cells($r, 1).Text.Trim()
       if ($fam1 -eq "") { continue }
-      $cat = $ws2.Cells($r, 68).Text.Trim()    # column BP: Family Category
+      $cat = $categoryColumn.DataBodyRange.Cells($r, 1).Text.Trim()
       if ($cat -ne "") { $map[$fam1] = $cat }
     }
     $sb = New-Object System.Text.StringBuilder
@@ -357,6 +365,9 @@ function Export-FamilyCategoryMap($excel, $fileName) {
     Write-Host "  $($map.Count) Family1 -> Family Category mappings -> $fileName"
   } finally {
     $wb2.Close($false)
+    if ($categoryColumn) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($categoryColumn) | Out-Null }
+    if ($familyColumn) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($familyColumn) | Out-Null }
+    if ($sourceTable) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($sourceTable) | Out-Null }
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($ws2) | Out-Null
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wb2) | Out-Null
   }

@@ -36,16 +36,28 @@ param(
 $ErrorActionPreference = "Stop"
 
 $xlUp = -4162
+$xlToLeft = -4159
 $xlPasteValues = -4163
 
-# 1-indexed Excel column numbers that get raw/derived values (everything else is a formula extended via FillDown)
-$SALES_SEED_COLS = @(2,3,5,6,11,12,13,22,24,29,34,36,52,53,54,55,74,75,77,78,80,81,99,102,103)
+$SALES_INPUT_HEADERS = @(
+  "Invoice", "Invm_date", "Ship_Code", "Ship_to", "Cust_id", "Cust_name", "Region",
+  "Part_id", "Part_desc2", "SKU_qty", "Unit_Price_Inv", "curr", "VEND_ID", "VEND_NAME",
+  "PO_CURR", "LST_RCP_PR (ORI CUR)", "SO_NO", "PO_NO", "Qtr"
+)
+$SALES_IGNORED_HEADERS = @(
+  "Part_desc1", "no of pans", "Ttl  Pans", "Ttl_Commission1_Inv", "Ttl_Commission2_Inv",
+  "Ttl_Direct Commission_Inv", "Ttl_Defective_Allowance_Inv", "Ttl_Return_Rebate_Inv",
+  "Ttl_Disc_Rebate_Inv", "Ttl_Royalty_Inv", "Labor_USD", "Matl_brdn_USD", "Labor_brdn_USD",
+  "Subcon_cost_USD", "Prime_USD", "Dupont Rebate (USD/unit)", "Ttl Dupont Rebate (USD)",
+  "Alum Rebate (USD/unit)", "Ttl Alum Rebate (USD)", "Prime Cost After Rebates (USD)",
+  "Net Cont After Rebates (USD)", "Net Cont After Rebates (%)", "Database", "yyyy-mm2",
+  "Ttl PO USD", "TTL PO USD3", "TTL PO GROSS CONT USD", "TTL PO NET CONT USD",
+  "TTL PO NET CONT %", "unit prime usd", "unit po usd", "Check QTY", "Invoice_date"
+)
+
 $NSP_SEED_COLS = @(2..35) + @(37)
 $POCOMM_SEED_COLS = @(1..35)
 
-# Non-seed columns already confirmed (2026-08 column audit) to be legitimately static/manual
-# entry fields, not formulas - excluded from the missing-formula warning below.
-$SALES_EXPECTED_STATIC = @(23,30,31,61,62,63,64)   # Part_desc1, no of pans, Ttl Pans, Dupont/Alum Rebate fields
 $NSP_EXPECTED_STATIC = @(36)                       # CHECK - confirmed always-static (0) since earliest rows, not a broken formula
 $POCOMM_EXPECTED_STATIC = @(36)                    # AJ (TTL COST USD) - already documented as needing manual entry
 
@@ -77,6 +89,7 @@ $excel.DisplayAlerts = $false
 $excel.AskToUpdateLinks = $false
 $excel.ScreenUpdating = $false
 $excel.EnableEvents = $false
+$saveCompleted = $false
 
 function Open-WB($path, $readOnly) {
   # A freshly Copy-Item'd multi-ten-MB file on a OneDrive-synced folder can
@@ -131,6 +144,118 @@ function Merge-AppendSheet($mWs, $impWs, $lastRow, $n, $numCols, $seedCols, $imp
   }
 }
 
+# Appends MTC Sales Details by header. Only the 19 approved input fields are written;
+# all other table columns are preserved as calculated columns.
+function Merge-SalesDetailsByHeader($mWs, $impWs) {
+  $table = $mWs.ListObjects.Item("MTC_Sales_Details")
+  if ($null -eq $table) { throw "Required table 'MTC_Sales_Details' was not found on MTC Sales Details." }
+
+  $masterHeaders = @{}
+  for ($c = 1; $c -le $table.ListColumns.Count; $c++) {
+    $header = ([string]$table.ListColumns.Item($c).Name).Trim()
+    if ([string]::IsNullOrWhiteSpace($header)) { throw "Blank header found in MTC_Sales_Details column $c." }
+    if ($masterHeaders.ContainsKey($header)) { throw "Duplicate table header '$header' in MTC_Sales_Details." }
+    $masterHeaders[$header] = $c
+  }
+
+  $missingMasterInputs = @($SALES_INPUT_HEADERS | Where-Object { -not $masterHeaders.ContainsKey($_) })
+  if ($missingMasterInputs.Count) { throw "Required table headers missing from MTC_Sales_Details: $($missingMasterInputs -join ', ')" }
+
+  $importLastCol = $impWs.Cells(1, $impWs.Columns.Count).End($script:xlToLeft).Column
+  $importHeaders = @{}
+  $unmatchedHeaders = @()
+  $duplicateImportHeaders = @()
+  for ($c = 1; $c -le $importLastCol; $c++) {
+    $header = ([string]$impWs.Cells(1, $c).Value2).Trim()
+    if ([string]::IsNullOrWhiteSpace($header)) { continue }
+    if ($importHeaders.ContainsKey($header)) { $duplicateImportHeaders += $header; continue }
+    $importHeaders[$header] = $c
+    if (-not $masterHeaders.ContainsKey($header) -and $header -notin $SALES_IGNORED_HEADERS) { $unmatchedHeaders += $header }
+  }
+
+  $missingRequired = @($SALES_INPUT_HEADERS | Where-Object { -not $importHeaders.ContainsKey($_) })
+  $problems = @()
+  if ($duplicateImportHeaders.Count) { $problems += "Duplicate import headers: $($duplicateImportHeaders -join ', ')" }
+  if ($unmatchedHeaders.Count) { $problems += "Import headers neither matched nor approved as ignored: $($unmatchedHeaders -join ', ')" }
+  if ($missingRequired.Count) { $problems += "Required input headers missing from import: $($missingRequired -join ', ')" }
+  if ($problems.Count) { throw "MTC Sales Details schema validation failed:`n - $($problems -join "`n - ")" }
+
+  $matchedHeaderCount = @($importHeaders.Keys | Where-Object { $masterHeaders.ContainsKey($_) }).Count
+  $ignoredPresent = @($SALES_IGNORED_HEADERS | Where-Object { $importHeaders.ContainsKey($_) })
+  $importInvoiceCol = $importHeaders["Invoice"]
+  $importLastRow = $impWs.Cells($impWs.Rows.Count, $importInvoiceCol).End($script:xlUp).Row
+  $n = [Math]::Max(0, $importLastRow - 1)
+  if ($n -eq 0) {
+    return @("MTC Sales Details: no import data rows; skipped.", "Matched headers: $matchedHeaderCount; ignored headers present: $($ignoredPresent.Count) of $($SALES_IGNORED_HEADERS.Count); input columns written: 0 of $($SALES_INPUT_HEADERS.Count).", "Ignored-value warning count: 0.")
+  }
+
+  # The 33 legacy columns are deliberately ignored. Invoice_date is a confirmed
+  # duplicate of Invm_date; warn only if a future import disagrees with its kept field.
+  $warningLines = @()
+  $warningCount = 0
+  foreach ($header in $ignoredPresent) {
+    $sourceCol = $importHeaders[$header]
+    $warningRows = @()
+    for ($r = 2; $r -le $importLastRow; $r++) {
+      $value = $impWs.Cells($r, $sourceCol).Value2
+      $meaningful = $false
+      if ($null -ne $value -and -not [string]::IsNullOrWhiteSpace([string]$value)) {
+        $number = 0.0
+        $isNumeric = [double]::TryParse([string]$value, [Globalization.NumberStyles]::Any, [Globalization.CultureInfo]::InvariantCulture, [ref]$number)
+        $meaningful = -not ($isNumeric -and $number -eq 0)
+      }
+
+      if ($header -eq "Invoice_date") {
+        $keptValue = $impWs.Cells($r, $importHeaders["Invm_date"]).Value2
+        if ([string]$value -eq [string]$keptValue) { $meaningful = $false }
+      }
+      if ($meaningful) {
+        $warningCount++
+        $warningRows += "row $r = [$value]"
+      }
+    }
+    if ($warningRows.Count) { $warningLines += "WARNING ignored column '$header' has non-blank/non-zero values: $($warningRows -join '; ')" }
+  }
+
+  $lastRow = $table.Range.Row + $table.Range.Rows.Count - 1
+  $firstNewRow = $lastRow + 1
+  $lastCol = $table.ListColumns.Count
+
+  # Copy each formula column's last available formula into the new table rows.
+  # This preserves calculated columns while avoiding any import writes to them.
+  $formulaColumnCount = 0
+  for ($c = 1; $c -le $lastCol; $c++) {
+    $header = [string]$table.ListColumns.Item($c).Name
+    if ($header -in $SALES_INPUT_HEADERS) { continue }
+    $formulaTemplate = ""
+    $templateRow = 0
+    for ($r = $lastRow; $r -ge $table.DataBodyRange.Row; $r--) {
+      $candidate = [string]$mWs.Cells($r, $c).Formula
+      if ($candidate.StartsWith("=")) { $templateRow = $r; $formulaTemplate = [string]$mWs.Cells($r, $c).FormulaR1C1; break }
+    }
+    if (-not $formulaTemplate) { throw "Expected formula column '$header' has no formula in the existing table." }
+    $fillRange = $mWs.Range($mWs.Cells($templateRow, $c), $mWs.Cells($firstNewRow + $n - 1, $c))
+    $fillRange.FillDown() | Out-Null
+    $formulaColumnCount++
+  }
+
+  foreach ($header in $SALES_INPUT_HEADERS) {
+    $sourceCol = $importHeaders[$header]
+    $targetCol = $masterHeaders[$header]
+    $sourceRange = $impWs.Range($impWs.Cells(2, $sourceCol), $impWs.Cells($importLastRow, $sourceCol))
+    $targetRange = $mWs.Range($mWs.Cells($firstNewRow, $targetCol), $mWs.Cells($firstNewRow + $n - 1, $targetCol))
+    $targetRange.Value2 = $sourceRange.Value2
+  }
+
+  $table.Resize($mWs.Range($mWs.Cells($table.Range.Row, $table.Range.Column), $mWs.Cells($lastRow + $n, $table.Range.Column + $lastCol - 1))) | Out-Null
+  $logLines = @(
+    "MTC Sales Details: appended $n rows ($firstNewRow-$($firstNewRow + $n - 1)) by header; $formulaColumnCount formula columns preserved.",
+    "Matched headers: $matchedHeaderCount; ignored headers present: $($ignoredPresent.Count) of $($SALES_IGNORED_HEADERS.Count); input columns written: $($SALES_INPUT_HEADERS.Count) of $($SALES_INPUT_HEADERS.Count).",
+    "Ignored-value warning count: $warningCount."
+  )
+  return $logLines + $warningLines
+}
+
 try {
   $masterWb = Open-WB $OutputPath $false
   $importWb = Open-WB $ImportPath $true
@@ -141,20 +266,13 @@ try {
   $log = @()
   $warnings = @()
 
-  # ---- MTC Sales Details: append rows A:CY (header row1, data from row2) ----
+  # ---- MTC Sales Details: append via table headers; formula columns are preserved ----
   if ($importSheetNames -contains "MTC Sales Details") {
     $impWs = $importWb.Worksheets.Item("MTC Sales Details")
-    $impLastRow = $impWs.Cells($impWs.Rows.Count, 2).End($xlUp).Row
-    $n = $impLastRow - 1
-    if ($n -gt 0) {
-      $mWs = $masterWb.Worksheets.Item("MTC Sales Details")
-      $lastRow = $mWs.Cells($mWs.Rows.Count, 2).End($xlUp).Row
-      $warnings += Test-TemplateFormulas $mWs "MTC Sales Details" 1 $lastRow 103 $SALES_SEED_COLS $SALES_EXPECTED_STATIC
-      Merge-AppendSheet $mWs $impWs $lastRow $n 103 $SALES_SEED_COLS 2
-      $log += "MTC Sales Details: inserted $n rows ($($lastRow+1)-$($lastRow+$n))."
-    }
+    $mWs = $masterWb.Worksheets.Item("MTC Sales Details")
+    $log += Merge-SalesDetailsByHeader $mWs $impWs
   } else {
-    $log += "MTC Sales Details: not in import file, skipped."
+    throw "Required worksheet 'MTC Sales Details' is missing from the import file."
   }
 
   # ---- Exchange Rate: find the existing pre-built row for the month, fill C:J only ----
@@ -213,7 +331,18 @@ try {
     $log += "PO comm: not in import file, skipped."
   }
 
+  $excel.CalculateFullRebuild()
+  $pivotRefreshCount = 0
+  foreach ($ws in $masterWb.Worksheets) {
+    foreach ($pivot in $ws.PivotTables()) {
+      $null = $pivot.RefreshTable()
+      $pivotRefreshCount++
+    }
+  }
+  $log += "PivotTables refreshed: $pivotRefreshCount."
+
   $masterWb.Save()
+  $saveCompleted = $true
 
   Write-Output "----"
   $log | ForEach-Object { Write-Output $_ }
@@ -227,10 +356,19 @@ try {
     $warnings | ForEach-Object { Write-Output "  $_" }
   }
 }
+catch {
+  Write-Output "FAILED at script line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)"
+  Write-Output "Stack: $($_.ScriptStackTrace)"
+  Write-Output "Command: $($_.InvocationInfo.Line.Trim())"
+  throw
+}
 finally {
   if ($importWb) { $importWb.Close($false) }
-  if ($masterWb) { $masterWb.Close($true) }
+  if ($masterWb) { $masterWb.Close($saveCompleted) }
   $excel.Quit()
   [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
   [System.GC]::Collect()
+  if (-not $saveCompleted -and (Test-Path -LiteralPath $OutputPath)) {
+    Remove-Item -LiteralPath $OutputPath -Force
+  }
 }
