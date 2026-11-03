@@ -42,8 +42,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$scriptDir = $PSScriptRoot
-$projectDir = "C:\Users\User\Desktop\MTC Sales Report Claude"
+$projectDir = Split-Path -Parent $PSScriptRoot
+$scriptDir = Join-Path $projectDir "HTML_Report_Generator"
 
 if (-not $SourceExcelPath) {
   $namePattern = '^FIN_MTC Sales & Margin \((\d+)-(\d+)\)(\d{4})_(\d{8})_R(\d+)\.xlsx$'
@@ -326,7 +326,7 @@ function Export-FlatTable($ws, $headerRow, $dataStartRow, $lastCol, $fileName, $
 # own main column, so the table needs both. Many Family1 values map to the
 # same Family Category, never the reverse, so a flat last-write-wins
 # dictionary keyed by Family1 is enough - no aggregation needed here.
-$FAMILY_CATEGORY_SOURCE = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx"))
+$FAMILY_CATEGORY_SOURCE = [System.IO.Path]::GetFullPath((Join-Path $projectDir "Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx"))
 function Export-FamilyCategoryMap($excel, $fileName) {
   if (-not (Test-Path $FAMILY_CATEGORY_SOURCE)) {
     Write-Host "  WARNING: Family Category source not found at $FAMILY_CATEGORY_SOURCE - skipping (Prod Family tab will show blank brand column)"

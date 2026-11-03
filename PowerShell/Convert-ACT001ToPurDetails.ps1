@@ -22,7 +22,7 @@
   formula columns rather than per-cell formula entry.
 
   USAGE
-    .\Convert-ACT001ToPurDetails.ps1 `
+    .\PowerShell\Convert-ACT001ToPurDetails.ps1 `
       -WorkbookPath "C:\Users\User\Desktop\MTC Sales Report Claude\Sales-Data-MTC-Mthly Rate - UPDATED.xlsx" `
       -ACT001Sheet "ACT001_0926" `
       -ReportingMonth "2026-09"

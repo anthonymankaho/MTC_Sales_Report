@@ -16,8 +16,8 @@
   Header is always row 1; data starts row 2.
 
   Usage:
-    powershell -ExecutionPolicy Bypass -File Check-SourceTransactionCounts.ps1
-    powershell -ExecutionPolicy Bypass -File Check-SourceTransactionCounts.ps1 -IvrPath "..." -SalesCommPath "..." -PurchaseCommPath "..."
+    powershell -ExecutionPolicy Bypass -File PowerShell\Check-SourceTransactionCounts.ps1
+    powershell -ExecutionPolicy Bypass -File PowerShell\Check-SourceTransactionCounts.ps1 -IvrPath "..." -SalesCommPath "..." -PurchaseCommPath "..."
 
   Exits with code 0 if all three counts match, 1 otherwise (so it can gate a
   later step in a chained script if wanted).

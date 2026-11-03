@@ -18,11 +18,11 @@ into the master workbook, and merging them in safely.
    to auto-detect the next empty row), and produces `MTC_Import_Rows.xlsx` — a single
    file with tabs for MTC Sales Details, Exchange Rate, Net Selling Price, and PO comm.
 3. **Review** `MTC_Import_Rows.xlsx` by hand.
-4. **Merge into the master** with [Combine-Into-Master.ps1](Combine-Into-Master.ps1):
+4. **Merge into the master** with [Combine-Into-Master.ps1](PowerShell/Combine-Into-Master.ps1):
 
    ```powershell
    cd "C:\Users\User\Desktop\MTC Sales Report Claude"
-   powershell -ExecutionPolicy Bypass -File Combine-Into-Master.ps1 `
+   powershell -ExecutionPolicy Bypass -File PowerShell\Combine-Into-Master.ps1 `
      -MasterPath "Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx" `
      -ImportPath "MTC_Import_Rows.xlsx" `
      -OutputPath "Sales-Data-MTC-Mthly Rate - UPDATED_YYYYMM.xlsx"
@@ -36,11 +36,12 @@ into the master workbook, and merging them in safely.
    cleaned master. Keep the original 145-column workbook unchanged as the backup; new
    imports use the cleaned 95-column master.
 6. When an `ACT001_MMYY` sheet and its `Pur_Combined_MMYY` companion are present, run
-   [Convert-ACT001ToPurDetails.ps1](Convert-ACT001ToPurDetails.ps1) on a separate copy
+   [Convert-ACT001ToPurDetails.ps1](PowerShell/Convert-ACT001ToPurDetails.ps1) on a separate copy
    with `-OutputPath`. Confirm the appended row count, month, duplicate-key check, exchange
    rates, and reconciliation before promoting the result.
 
-See [MTC Sales Report Import SOP.docx](<MTC Sales Report Import SOP.docx>) for the full
+See [MTC Sales Report Import SOP.docx](<Documentation/MTC Sales Report Import SOP.docx>)
+for the full
 step-by-step SOP.
 
 ## Interactive HTML report (optional)
@@ -53,7 +54,7 @@ capability from the monthly import cycle; run it whenever an updated report need
 shared.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File HTML_Report_Generator\Generate-MTCSalesReportHtml.ps1
+powershell -ExecutionPolicy Bypass -File PowerShell\Generate-MTCSalesReportHtml.ps1
 ```
 
 No arguments are required for the normal monthly case ? the script auto-detects the newest
@@ -72,9 +73,9 @@ Purchase: YTD by Vendor. Every tab supports an English/Traditional Chinese toggl
 light/dark mode (top right), and clicking any highlighted number or name drills into the
 underlying transactions on the Data tab. Dashboard Sales uses `Net_Sales_USD`, which differs
 from `Total Net Net Sales (USD)` because it does not deduct sales-side invoice commission.
-The whole thing is one self-contained HTML file ? safe to attach directly to an email.
+The report is a self-contained HTML file that can be attached directly to an email.
 
-See [MTC Sales Report Import SOP.docx](<MTC Sales Report Import SOP.docx>), section 5, for
+See [MTC Sales Report Import SOP.docx](<Documentation/MTC Sales Report Import SOP.docx>), section 5, for
 the full write-up.
 
 ## Current progress (2026-11-03)
@@ -98,25 +99,41 @@ the full write-up.
 
 | Path                                                                     | Purpose                                                                                    |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `Builder Data.bat`, `Builder HTML.bat`                                | Menu launchers for the monthly data and HTML workflows                                    |
 | `app/index.html`                                                       | Browser-based staging tool (Steps 1-3 of the SOP)                                          |
 | `app/xlsx.full.min.js`                                                 | SheetJS library used by the tool to read/write`.xlsx` client-side                        |
-| `Combine-Into-Master.ps1`                                              | PowerShell + Excel COM script that merges staged rows into the master (Step 4)             |
-| `Convert-ACT001ToPurDetails.ps1`                                       | Converts ACT001 rows to `Pur Details` on a separate output copy                           |
-| `MTC Sales Report Import SOP.docx`                                     | Full written procedure                                                                     |
+| `PowerShell/Check-SourceTransactionCounts.ps1`                        | Checks monthly source transaction counts before staging                                   |
+| `PowerShell/Combine-Into-Master.ps1`                                   | PowerShell + Excel COM merge into the cleaned master (Step 4)                              |
+| `PowerShell/Convert-ACT001ToPurDetails.ps1`                            | Converts ACT001 rows to `Pur Details` on a separate output copy                           |
+| `PowerShell/App/Combine-Into-Master.ps1`                               | Merge-script copy used by the browser staging workflow                                   |
+| `PowerShell/Backup/`                                                   | Retained backup script; not used in the normal workflow                                   |
+| `Documentation/MTC Sales Report Import SOP.docx`                        | Full written procedure                                                                     |
+| `Documentation/PowerShell List.md`, `Documentation/presentation.md`     | Script inventory and workflow briefing                                                    |
 | `Sales-Data-MTC-Mthly Rate.xlsx`                                       | Original 145-column master/reference; do not use as the cleaned merge target               |
-| `Sales-Data-MTC-Mthly Rate - UPDATED.xlsx`                             | Legacy monthly output name; use a dated output name for new runs                         |
+| `202609/Sales-Data-MTC-Mthly Rate - UPDATED.xlsx`                      | Archived 2026-09 master output; use a dated output name for new runs                      |
 | `Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx`       | Current cleaned 95-column master; the original 145-column file is retained as backup      |
-| `FIN_MTC Sales & Margin*.xlsx`, `FIN - MTC Sales & Margin Temp.xlsx` | Finance sales & margin report exports                                                      |
+| `FIN_MTC Sales & Margin*.xlsx`, `FIN - MTC Sales & Margin Temp.xlsx` | Active finance report exports; historical copies are organized by month                  |
 | `Sales & Commission Report-MTC.xlsx`                                   | Commission report                                                                          |
 | `EPI_Purchase Commission Combined.xlsx`                                | Source: commission/PO data from EPICOR                                                     |
 | `IVR032.xlsx`                                                          | Source: monthly sales export                                                               |
 | `STANDARD EXCHANGE RATE-YYYY-MM.xls`                                   | Source: monthly FX rate table                                                              |
 | `MTC_Import_Rows.xlsx`                                                 | Staged output from`app/index.html`, ready to merge                                       |
-| `HTML_Report_Generator/Generate-MTCSalesReportHtml.ps1`                | Extracts data from the finalized FIN_MTC workbook via Excel COM (read-only)                |
+| `PowerShell/Generate-MTCSalesReportHtml.ps1`                           | Extracts data from the FIN_MTC workbook and builds the HTML report                         |
 | `HTML_Report_Generator/build_report.js`                                | Node script that assembles the extracted data into the single-file interactive HTML report |
 | `HTML_Report_Generator/vendor/`                                        | Vendored jQuery, DataTables, and Chart.js used by the generated report                     |
 | `FIN_MTC_Sales_Report_html_TEMP.html`                                  | Output of the HTML report generator — the shareable interactive report                    |
 | `FIN_MTC_Combined_Sales_Purchase_Margin_html_REVISED_20261103.html`     | Validated revised report with the approved Family Category mappings                      |
+
+## Folder map
+
+- `Documentation/` - SOP, PowerShell list, and workflow presentation.
+- `PowerShell/` - MTC workflow scripts; `App/` and `Backup/` contain the staging copy and backup.
+- `Reports/Audit Summaries/` - dated audit summary exports.
+- `Reference/Prompts/` - reusable reference prompts not used by the MTC scripts.
+- `SANDBOX/` - test workbooks, test scripts, and verification artifacts.
+- `202606/`, `202607/`, `202608/`, `202609/` - archived monthly source files and outputs.
+- `Pur Comm/` - archived purchase commission source files. `Margin Report/` is retained as an existing project folder.
+- Keep launchers and active source/master workbooks in the project root. The MTC PowerShell scripts are stored in `PowerShell/`; HTML builder assets remain in `HTML_Report_Generator/`.
 
 ## Notes
 

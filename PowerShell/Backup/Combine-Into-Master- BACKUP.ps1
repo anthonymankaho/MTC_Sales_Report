@@ -24,7 +24,7 @@
   static/manual (2026-08 audit) is excluded from the warning to avoid noise.
 
   Usage:
-    powershell -ExecutionPolicy Bypass -File Combine-Into-Master.ps1 -MasterPath "...\Sales-Data-MTC-Mthly Rate.xlsx" -ImportPath "...\MTC_Import_Rows.xlsx" -OutputPath "...\Sales-Data-MTC-Mthly Rate - UPDATED.xlsx"
+    powershell -ExecutionPolicy Bypass -File PowerShell\Backup\Combine-Into-Master- BACKUP.ps1 -MasterPath "...\Sales-Data-MTC-Mthly Rate.xlsx" -ImportPath "...\MTC_Import_Rows.xlsx" -OutputPath "...\Sales-Data-MTC-Mthly Rate - UPDATED.xlsx"
 #>
 
 param(
