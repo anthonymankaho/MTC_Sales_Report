@@ -46,6 +46,119 @@ const jqueryJs = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'jquery.min.js'
 const dataTablesJs = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'dataTables.min.js'), 'utf8');
 const dataTablesCss = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'dataTables.min.css'), 'utf8');
 const chartJs = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'chart.min.js'), 'utf8');
+// ---- GLOBE assets: three.js ESM (vendor/lib, byte-identical copy of the GPR
+// 3D Earth Dashboard build), land topology (vendor/data) and the ported engine
+// (globe/globe.js), all read at build time and inlined into the Dashboard.
+const threeSrc = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'lib', 'three.module.min.js'), 'utf8');
+const landSrc = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'data', 'land-110m.json'), 'utf8');
+const globeJsSrc = fs.readFileSync(path.join(SCRIPT_DIR, 'globe', 'globe.js'), 'utf8');
+// Island escape discipline, ported from GPR build/build.mjs:67-76. Every JSON
+// island rides as JSON *text* inside an inert <script type="application/json">
+// tag; a single raw '<' would let '</script' truncate that tag once the srcdoc
+// iframe re-parses the sheet, and the double-embedding here (island-in-sheet,
+// sheet-in-SHEETS JSON) makes this file's own neutralize() (:14) insufficient
+// on its own. So: replaceAll every '<' with the backslash-u003c unicode escape
+// (JSON.parse restores it), then REFUSE to write output if either dangerous sequence is
+// still present, exactly like build.mjs:74-76's throw-before-write guard.
+function escapeIsland(jsonText, label) {
+  const escaped = jsonText.replaceAll('<', '\\u003c');
+  if (escaped.includes('</script') || escaped.includes('<!--')) {
+    throw new Error('GLOBE BUILD GUARD: ' + label + ' contains a script-terminating sequence - refusing to write output');
+  }
+  return escaped;
+}
+function guardInlineScript(src, label) {
+  if (src.includes('</script') || src.includes('<!--')) {
+    throw new Error('GLOBE BUILD GUARD: ' + label + ' contains a script-terminating sequence - refusing to write output');
+  }
+  return src;
+}
+const threeIsland = escapeIsland(JSON.stringify(threeSrc), 'three island');
+const landIsland = escapeIsland(JSON.stringify(JSON.parse(landSrc)), 'land island');
+guardInlineScript(globeJsSrc, 'globe/globe.js');
+
+// ---------------------------------------------------------------------------
+// DOMESTIC tab chrome strings, ENGLISH side, kept as ONE Node map instead of
+// being typed into I18N_JS.en by hand: buildDomesticHtml below also has to
+// bake the same English copy into the page as its pre-applyLanguage default
+// (the INTRO_EN trick at :313 exists for exactly that reason), and INTRO_EN's
+// hand-duplicated strings are already known to drift from I18N's copy (see
+// the "5 charts vs 6 charts" divergence). So DOM_EN is the single source and
+// DOM_EN_JS splices it into I18N_JS.en as generated object entries.
+// Its zh twins are written out literally in I18N_JS.zh - the completeness of
+// BOTH dictionaries for every key this page uses is asserted, not assumed, by
+// _work/../_domestic_assert.js (t() at :143 falls back to the raw key, so a
+// missing zh entry leaks English into 中文 mode with no error at all).
+// {token} placeholders are filled from the computed data (DOM_FILLS) on both
+// sides, so one string serves both languages.
+// ---------------------------------------------------------------------------
+const DOM_EN = {
+  tab_domestic: 'Domestic',
+  title_domestic: 'Domestic Orders 2026–2027 (MJP · MCN · MZQ · MIN)',
+  introDomestic: "Domestic orders and MTC commission / royalty, shown in each entity's own currency exactly as the source workbook records them. Every USD figure on this page is derived at build time for reference only — the workbook's own MA/DI USD totals do not include them.",
+  domActionSales: '2026 domestic sales cover {entities} entities across {currencies} currencies, equivalent to USD {usd} on a derived basis.',
+  domActionCommission: 'MTC commission / royalty on those orders derives to USD {usd}, about {pct}% of the sales figure.',
+  domActionPending: 'Only {names} carries a 2027 outstanding balance: {sales} of sales and {comm} of commission.',
+  domSecSales: 'Exhibit 1 · Table A — domestic sales',
+  domSecCommission: 'Exhibit 2 · Table B — MTC commission / royalty',
+  domColEntity: 'Entity / Customer',
+  domColMarket: 'Market',
+  domColShipped: '2026 Shipped',
+  domColOutstanding: '2026 Outstanding',
+  domColTotal2026: '2026 Total',
+  domColOutstanding2027: '2027 Outstanding',
+  domColUsd: 'USD equivalent (derived)',
+  domColSalesShort: 'Domestic sales (Table A)',
+  domColCommissionShort: 'MTC commission (Table B)',
+  domSubtotal: 'Local subtotal',
+  domCardUsdLabel: 'Derived USD',
+  domUsdBoxTitle: 'Derived USD memo — cross-currency, USD only',
+  domUsdBasisCol: 'Measure',
+  domUsdTotalLabel: '2026 total (all currencies)',
+  domUsdBoxCaption: 'Derived at build time — Not included in MA/DI USD totals (source workbook policy)',
+  domBasisFlagTitle: 'No 2026 activity on this row — converted from its 2027 outstanding balance.',
+  domCautionTitle: 'Caution carried over from the source workbook',
+  domCautionNoSum: 'Local-currency amounts must never be added across currencies.',
+  domNoYoy: 'No year-on-year comparison — 2025 is omitted pending confirmation.',
+  domCancelled: 'Cancelled orders are excluded.',
+  domAsOf: 'Domestic data as of',
+  domFootnotesTitle: 'Sources and notes',
+  domSourceFile: 'Source workbook',
+  domSourceSheetNote: 'sheet "Summary" — Table A (sales) and Table B (commission / royalty), read by anchored search, not fixed rows.',
+  domFxSource: 'Exchange rates',
+  domInrSource: 'INR rate basis',
+  domUsdBasisNote: 'USD basis',
+  domUsdBasisFormula: 'USD per unit = that currency’s HKD rate ÷ the USD row’s HKD rate.',
+  domUsdRowSkipNote: 'No USD subtotal down the column: a currency card can hold rows on different bases (2026 and 2027), so derived USD figures are listed per basis in the memo line under each table.',
+  domMjpSource: 'MJP external source',
+  domMjpNote: 'MJP arrives from outside this workbook family; confirm against the source before relying on it.',
+  domFxMissingLabel: 'Currency with no rate found',
+  domFxMissingNote: 'shown with no USD equivalent rather than dropped — its local figures below stay in the report.',
+  domInrFallbackWarn: 'Fallback INR rate in use',
+  domIslandsLabel: 'Source islands'
+};
+const DOM_EN_JS = Object.keys(DOM_EN).map(k => '    ' + k + ': ' + JSON.stringify(DOM_EN[k]) + ',').join('\n');
+
+// =========================================================================
+// ACTION_EN - the static bilingual "conclusion line" (McKinsey action title)
+// for each of the eight table pages, approved as fixed copy by the user in
+// the restyle brief (the Dashboard and Domestic pages compute theirs from
+// live numbers instead). Same single-source pattern as DOM_EN above: this map
+// is spliced into I18N_JS.en by ACTION_EN_JS, the zh twins are the literal
+// lines in I18N_JS.zh, and the factory bakes the English value into the page
+// as the pre-applyLanguage default - so no INTRO_EN-style drift is possible.
+// =========================================================================
+const ACTION_EN = {
+  actionData: 'Every number in this report recomputes from this one order-level ledger.',
+  actionExrate: 'The whole report’s USD basis in a single table - one Platinum Buy Rate per currency.',
+  actionYoyCustomers: 'Year-on-year swing customer by customer - the Total Index above holds the whole-business view.',
+  actionYoyFabrication: 'The same 2026-vs-2025 swing, cut by fabrication route.',
+  actionYoyProdFamily: 'The same swing at product level - Brand rows roll up their Family1 detail.',
+  actionYoyPartId: 'The swing taken down to individual part numbers - where the delta actually originates.',
+  actionYoyNetNetMargin: 'The tighter Net Net basis, not invoice NET - this comparison reads lower by construction.',
+  actionCustomerQuarter: 'Net margin per customer across 2026’s four quarters - a within-year read, not a two-year one.',
+};
+const ACTION_EN_JS = Object.keys(ACTION_EN).map(k => '    ' + k + ': ' + JSON.stringify(ACTION_EN[k]) + ',').join('\n');
 
 // ---------------------------------------------------------------------------
 // Language toggle (EN / 繁體中文) - translates titles, headers, labels, and
@@ -76,17 +189,30 @@ var I18N = {
     filterYear: 'Year', filterMonth: 'Month', filterCustomer: 'Customer', filterVendor: 'Vendor',
     filterCountry: 'Country', resetFilters: 'Reset filters',
     kpiNetSales: 'Net Sales (USD)', kpiNetCost: 'Net Cost (USD)', kpiNetMargin: 'Net Margin (USD)', kpiNetMarginPct: 'Net Margin %',
+    kpiVsLabel: 'vs same months last year',
+    kpiDomSales: 'Domestic Net Sales (USD, derived)', kpiDomCommission: 'Domestic MTC Commission (USD, derived)',
+    domBasis: '2026 total', domAsOf: 'snapshot as of',
+    domStripNote: '† Derived USD memo from the Domestic Orders snapshot — Not included in MA/DI USD totals (source workbook policy). Click a card to open the Domestic tab.',
     trendSalesCostTitle: 'Monthly Trend: Sales & Cost (USD), 2025 vs 2026', trendMarginTitle: 'Monthly Trend: Margin (USD), 2025 vs 2026',
     seriesSales: 'Sales', seriesCost: 'Cost', seriesMargin: 'Margin',
     legendNetSales: 'Net Sales', legendNetCost: 'Net Cost', legendNetMargin: 'Net Margin',
     vendorTitle: 'Top Vendors by Cost', customerTitle: 'Top Customers by Sales',
     geoTitle: 'Geographic Performance by Margin', originTitle: 'Country of Origin by Sales',
+    globeKicker: 'Global Trade Flow', globeTitle: 'Where the money goes - and where it comes from',
+    globeModeSales: 'Global Sales', globeModePurchase: 'Global Purchase',
+    globeBuilding: 'Building the 3D earth...', globeFailed: '3D view unavailable on this machine - the Geographic (Margin) and Origin charts below stay in view as the fallback.',
+    globeHelp: 'Drag to rotate - hover a marker for the readout - click one to open the Data tab pre-filtered',
+    globeNote: 'Marker hubs are indicative capital/economic-city positions; every USD figure comes straight from the embedded DATA ledger (Net Sales / Net Cost).',
+    globeUnitSales: 'Net Sales (USD) by destination', globeUnitPurchase: 'Net Cost (USD) by origin',
+    globeAllMarkets: 'All markets', globeLegendTitle: 'Geographic performance - click a row to drill in',
+    globeSizeLegend: 'marker size scales with value',
+    globeUnlocatedNote: 'No hub coordinate - no marker, but still counted in every figure:',
     otherCategory: 'Others',
     totalIndexHeading: 'Total Index',
     weightedLabel: 'weighted',
     yoyLabel: 'YoY', vsLabel: 'vs', varianceLabel: 'Variance', variancePctLabel: 'Variance %',
     yoyChangeCol: '2025 vs 2026 Net Sales % Change',
-    introDashboard: 'Filter by year, month, customer, vendor or country - 4 KPIs and 6 charts update instantly.',
+    introDashboard: 'Filter by year, month, customer, vendor or country - the 3D trade globe, 4 KPIs and 6 charts update instantly.',
     introData: 'The full transaction ledger behind every number in this report - click any highlighted value on another tab and it lands here, pre-filtered.',
     introExRate: 'The Platinum Buy Rate table used to convert every foreign-currency figure in this report to USD.',
     introYoyCustomers: '2026 vs 2025 by customer, with a Total Index above the table - click any name, country or number to see the transactions behind it.',
@@ -95,7 +221,17 @@ var I18N = {
     introYoyPartId: 'The same year-over-year comparison as the Customers tab, taken down to individual Part ID.',
     introYoyNetNetMargin: 'The same comparison as the Customers tab, built on the Net Net (further-deducted) basis instead of the invoice-level NET figure.',
     introCustomerQuarter: 'Net margin by customer across the four quarters of 2026, rather than a two-year comparison.',
-    langLabel: 'EN'
+    langLabel: 'EN',
+    exhibitWord: 'Exhibit', footSource: 'Sources',
+    // The backslash-u escapes below are MANDATORY at these two spots: this
+    // whole dictionary lives inside one outer Node template literal, so a
+    // literal dollar-brace would be evaluated as a (nonexistent) JS
+    // interpolation at build time and crash node build_report.js. Cooked,
+    // the page's own single-quoted string receives a plain "$" - the
+    // {S}/{M}/{P}/{D}/{T} tokens are substituted client-side by renderAction().
+    actionDashboard: 'Net sales US\\u0024{S} for {T} — {D} vs prior year; margin US\\u0024{M} ({P}).',
+${DOM_EN_JS}
+${ACTION_EN_JS}
   },
   zh: {
     tab_dashboard: '總覽', tab_data: '明細資料', tab_exrate: '匯率',
@@ -116,17 +252,30 @@ var I18N = {
     filterYear: '年度', filterMonth: '月份', filterCustomer: '客戶', filterVendor: '供應商',
     filterCountry: '國家', resetFilters: '重設篩選',
     kpiNetSales: 'Net銷售額 (USD)', kpiNetCost: 'Net成本 (USD)', kpiNetMargin: 'Net毛利 (USD)', kpiNetMarginPct: 'Net毛利率',
+    kpiVsLabel: '較去年同期',
+    kpiDomSales: '國內 Net銷售額 (USD,推算)', kpiDomCommission: '國內 MTC佣金 (USD,推算)',
+    domBasis: '2026合計', domAsOf: '快照截至',
+    domStripNote: '† 推算 USD 附註(取自 Domestic Orders 快照) — Not included in MA/DI USD totals(未納入 MA／DI 的 USD 合計)。點卡片可開啟 Domestic 頁。',
     trendSalesCostTitle: '月度趨勢：銷售額與成本 (USD)，2025 對比 2026', trendMarginTitle: '月度趨勢：毛利 (USD)，2025 對比 2026',
     seriesSales: '銷售額', seriesCost: '成本', seriesMargin: '毛利',
     legendNetSales: 'Net銷售額', legendNetCost: 'Net成本', legendNetMargin: 'Net毛利',
     vendorTitle: '主要供應商（依採購成本）', customerTitle: '主要客戶（依銷售額）',
     geoTitle: '地理績效（依毛利）', originTitle: '原產國（依銷售額）',
+    globeKicker: '全球貿易流向', globeTitle: '資金的去向 — 與貨物的來源',
+    globeModeSales: '全球銷售', globeModePurchase: '全球採購',
+    globeBuilding: '正在建立 3D 地球…', globeFailed: '此裝置無法顯示 3D 視圖 — 下方的地理（毛利）與原產國圖表將持續顯示作為備援。',
+    globeHelp: '拖曳旋轉 — 游標停留於標記查看數字 — 點擊標記可跳到 Data 頁並自動篩選',
+    globeNote: '標記位置為示意之都城／經濟城市；所有 USD 數字直接取自內嵌 DATA 明細（Net銷售額／Net成本）。',
+    globeUnitSales: '依目的地之 Net銷售額 (USD)', globeUnitPurchase: '依原產國之 Net成本 (USD)',
+    globeAllMarkets: '全部市場', globeLegendTitle: '地區績效排行 — 點列可鑽入篩選',
+    globeSizeLegend: '標記大小依金額縮放',
+    globeUnlocatedNote: '無標示座標 — 不畫標記，但所有數字仍照常計入：',
     otherCategory: '其他',
     totalIndexHeading: '總計指標',
     weightedLabel: '加權',
     yoyLabel: '較去年同期', vsLabel: '對比', varianceLabel: '差異', variancePctLabel: '差異率',
     yoyChangeCol: '2025對比2026 Net銷售額 % 變動',
-    introDashboard: '依年度、月份、客戶、供應商或國家篩選 — 4 項 KPI 與 6 個圖表即時更新。',
+    introDashboard: '依年度、月份、客戶、供應商或國家篩選 — 3D 貿易地球、4 項 KPI 與 6 個圖表即時更新。',
     introData: '本報表所有數字背後的完整交易明細 — 點擊其他頁籤中任何標示的數值，都會跳到這裡並自動套用篩選。',
     introExRate: '用於將本報表所有外幣數字換算為 USD 的白金買入匯率表。',
     introYoyCustomers: '依客戶呈現 2026 對比 2025，表格上方附總計指標 — 點擊任何名稱、國家或數字可查看其背後的交易明細。',
@@ -135,7 +284,60 @@ var I18N = {
     introYoyPartId: '與客戶頁籤相同的年度比較邏輯，細分至個別料號層級。',
     introYoyNetNetMargin: '與客戶頁籤相同的比較邏輯，改以 Net Net（進一步扣除後）基礎計算，而非發票層級 NET 數字。',
     introCustomerQuarter: '呈現 2026 年度內各客戶四個季度的淨毛利變化，而非兩年度比較。',
-    langLabel: '中文'
+    exhibitWord: '圖表', footSource: '資料來源',
+    actionDashboard: '淨銷售額 US\\u0024{S}（{T}）— 較去年同期 {D}；毛利 US\\u0024{M}（{P}）。',
+    actionData: '本報表所有數字均由這一張訂單層級帳務明細重新計算。',
+    actionExrate: '整份報表的 USD 基礎全在此表 — 每種貨幣一個白金買入匯率。',
+    actionYoyCustomers: '逐客戶看年度漲跌 — 全公司總覽請看上方總計指標。',
+    actionYoyFabrication: '同樣的 2026 對比 2025 漲跌，改依加工途徑切分。',
+    actionYoyProdFamily: '同樣的漲跌拉到產品層級 — 品牌列已加總其 Family1 明細。',
+    actionYoyPartId: '漲跌追進單一料號 — 差異實際發生的位置。',
+    actionYoyNetNetMargin: '以較嚴的 Net Net 基礎而非發票 NET 比較 — 數字天然偏低。',
+    actionCustomerQuarter: '2026 年四個季度各客戶淨毛利 — 年度內解讀，非兩年度比較。',
+    langLabel: '中文',
+    tab_domestic: '國內訂單',
+    title_domestic: '國內訂單 2026–2027（MJP · MCN · MZQ · MIN）',
+    introDomestic: '國內訂單與 MTC 佣金／權利金，一律依來源工作簿原樣以各實體自己的貨幣列示。本頁所有 USD 數字均為建置時推算，僅供參考 — 工作簿本身的 MA/DI USD 合計並未納入。',
+    domActionSales: '2026 年國內訂單涵蓋 {entities} 個實體、{currencies} 種貨幣，推算等值 USD {usd}。',
+    domActionCommission: '對應的 MTC 佣金／權利金推算為 USD {usd}，約占國內銷售額 {pct}%。',
+    domActionPending: '僅 {names} 留有 2027 年未結數字：銷售 {sales}、佣金 {comm}。',
+    domSecSales: '圖表 1 · 表 A — 國內銷售',
+    domSecCommission: '圖表 2 · 表 B — MTC 佣金／權利金',
+    domColEntity: '實體／客戶',
+    domColMarket: '市場',
+    domColShipped: '2026 已出貨',
+    domColOutstanding: '2026 未結',
+    domColTotal2026: '2026 合計',
+    domColOutstanding2027: '2027 未結',
+    domColUsd: 'USD 等值（推算）',
+    domColSalesShort: '國內銷售（表 A）',
+    domColCommissionShort: 'MTC 佣金（表 B）',
+    domSubtotal: '本地貨幣小計',
+    domCardUsdLabel: '推算 USD',
+    domUsdBoxTitle: '推算 USD 備忘 — 僅以 USD 跨貨幣比較',
+    domUsdBasisCol: '項目',
+    domUsdTotalLabel: '2026 合計（全部貨幣）',
+    domUsdBoxCaption: '建置時推算 — Not included in MA/DI USD totals(未納入 MA／DI 的 USD 合計)',
+    domBasisFlagTitle: '本列 2026 年無交易 — 以 2027 年未結數字換算。',
+    domCautionTitle: '來源工作簿之警示',
+    domCautionNoSum: '不同貨幣的本地金額一律不可相加。',
+    domNoYoy: '未做年度比較 — 2025 年數字因待確認而省略。',
+    domCancelled: '已取消訂單不予計入。',
+    domAsOf: '國內訂單資料截至',
+    domFootnotesTitle: '資料來源與註示',
+    domSourceFile: '來源工作簿',
+    domSourceSheetNote: '「Summary」工作表 — 表 A（銷售）與表 B（佣金／權利金），以關鍵字定位擷取，非固定列號。',
+    domFxSource: '匯率來源',
+    domInrSource: 'INR 換算基礎',
+    domUsdBasisNote: 'USD 換算基礎',
+    domUsdBasisFormula: '每單位 USD＝該貨幣之 HKD 匯率 ÷ USD 列之 HKD 匯率。',
+    domUsdRowSkipNote: 'USD 欄不设欄內小計：同一貨幣卡可能含 2026 與 2027 不同基礎的列，故推算 USD 金額改在各表下方之備忘列按基礎逐一列示。',
+    domMjpSource: 'MJP 外部來源',
+    domMjpNote: 'MJP 資料來自本工作簿系列之外，引用前請先與來源核對。',
+    domFxMissingLabel: '找不到匯率的貨幣',
+    domFxMissingNote: '該貨幣僅顯示為無 USD 等值，並不会被移除 — 其本地金額仍保留於本頁。',
+    domInrFallbackWarn: 'INR 已改用備援匯率',
+    domIslandsLabel: '來源資料島'
   }
 };
 var currentLang = 'en';
@@ -144,18 +346,25 @@ function t(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.e
 `;
 
 // Shared dark-mode CSS block (token-based, same convention across every tab).
+// McKinsey-grade retune (restyle stage): ink #051C2C as text, near-white paper
+// surfaces, one navy accent family, muted brick #A63D40 reserved for negatives
+// and cautions (--neg/--warn; DOMESTIC_CSS already reads var(--warn) with a
+// literal fallback that this token now actually supplies), hairline-friendly
+// borders, 13px base, generous page padding. Display serif (Georgia) is NOT
+// here - it enters through MCKINSEY_CSS (below) on the headline/action-title
+// roles only; everything else stays Calibri, no web fonts (offline file://).
 const SHARED_CSS = `
 :root {
-  --bg: #f4f6f9; --card-bg: #ffffff; --text: #222222; --text-muted: #666666;
-  --accent: #1a5c8a; --border: #cccccc; --border-light: #eeeeee; --shadow: rgba(0,0,0,0.1);
-  --input-bg: #ffffff; --hover-bg: #f5f5f5;
+  --bg: #F7F9FB; --card-bg: #FFFFFF; --text: #051C2C; --text-muted: #5B6B79;
+  --accent: #1a5c8a; --border: #C9D4DC; --border-light: #E4EAEF; --shadow: rgba(5,28,44,0.06);
+  --input-bg: #FFFFFF; --hover-bg: #EEF3F7; --neg: #A63D40; --warn: #A63D40;
 }
 body[data-theme="dark"] {
-  --bg: #10161c; --card-bg: #182029; --text: #e7edf0; --text-muted: #a3b3bc;
-  --accent: #5fb2c4; --border: #3a4a56; --border-light: #2a3641; --shadow: rgba(0,0,0,0.4);
-  --input-bg: #10161c; --hover-bg: #202a33;
+  --bg: #08131C; --card-bg: #12212B; --text: #E8EEF2; --text-muted: #9DB0BD;
+  --accent: #5FB2C4; --border: #33495A; --border-light: #24353F; --shadow: rgba(0,0,0,0.45);
+  --input-bg: #0E1A23; --hover-bg: #1B2B36; --neg: #D98F8E; --warn: #D98F8E;
 }
-body { font-family: Calibri, Arial, sans-serif; font-size: 12px; margin: 8px; background: var(--bg); color: var(--text); }
+body { font-family: Calibri, Arial, sans-serif; font-size: 13px; margin: 16px 20px; background: var(--bg); color: var(--text); }
 table.dataTable { color: var(--text); }
 th, td { white-space: nowrap; }
 .summary-bar { margin-bottom: 8px; font-weight: bold; color: var(--accent); }
@@ -219,6 +428,66 @@ canvas { max-height: 320px; }
 .ms-panel label { display: block; font-size: 12px; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .ms-panel label.ms-all-row { border-bottom: 1px solid var(--border-light); margin-bottom: 4px; padding-bottom: 6px; font-weight: bold; }
 .ms-search { display: block; width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 5px 8px; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); color: var(--text); }
+`;
+
+// =========================================================================
+// MCKINSEY_CSS - the consulting finish layer, emitted LAST in every style
+// assembly site (table pages, Dashboard after GLOBE_CSS, Domestic after
+// DOMESTIC_CSS, and the shell before its own rules), so its hairline/typo
+// overrides win over the component blocks without editing them. Owns: the
+// Georgia serif role for headlines + action titles only (body stays Calibri,
+// no web fonts), uppercase letter-spaced exhibit kickers, source footnotes,
+// shadows -> 1px hairlines on every card, and tabular-nums on figures.
+// It also carries the --shell-* token family + its dark block, which the
+// shell chrome (never including SHARED_CSS) reads - that is what makes the
+// tab bar and welcome modal follow dark mode for the first time.
+// =========================================================================
+const MCKINSEY_CSS = `
+:root {
+  --serif: Georgia, 'Times New Roman', Times, serif;
+  /* shell chrome tokens - light */
+  --shell-bg: #F7F9FB; --shell-card: #FFFFFF; --shell-text: #051C2C; --shell-muted: #5B6B79;
+  --shell-rule: #E4EAEF; --shell-accent: #1a5c8a;
+  --shell-nav: #123F5E; --shell-nav-text: #EAF1F6; --shell-nav-active: #051C2C;
+  --shell-nav-hover: #0C2C42; --shell-nav-sep: rgba(255,255,255,0.14);
+}
+body[data-theme="dark"] {
+  /* shell chrome tokens - dark */
+  --shell-bg: #051C2C; --shell-card: #12212B; --shell-text: #E8EEF2; --shell-muted: #9DB0BD;
+  --shell-rule: #33495A; --shell-accent: #5FB2C4;
+  --shell-nav: #0B1B26; --shell-nav-text: #D5E3EC; --shell-nav-active: #123F5E;
+  --shell-nav-hover: #1B2B36; --shell-nav-sep: rgba(255,255,255,0.08);
+}
+/* Typographic roles: serif = headlines/action titles only, never body or data. */
+h1, h2, .dom-title, .action-title { font-family: var(--serif); font-weight: 600; }
+.action-title { font-size: 17px; line-height: 1.35; color: var(--text); margin: 0 0 6px 0; max-width: 1080px; }
+.action-title.neg { color: var(--neg); }
+.exhibit-kicker { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin: 0 0 6px 0; }
+.source-foot { margin: 20px 0 6px 0; padding-top: 8px; border-top: 1px solid var(--border-light); font-size: 10.5px; color: var(--text-muted); line-height: 1.55; max-width: 1120px; font-variant-numeric: tabular-nums; }
+/* Hairline rules replace the raised-card look. */
+.kpi, .chart-box, .filters, .globe-section, .dom-card, .dom-usdbox, .total-index-filters .filter-group, .ms-panel, .ms-search { box-shadow: none; border-radius: 3px; }
+.kpi, .chart-box, .filters, .globe-section, .dom-usdbox, .total-index-filters .filter-group, .ms-panel { border: 1px solid var(--border-light); }
+#exportBtn, #clearFiltersBtn, #resetBtn, #resetColWidthsBtn, .globe-mode, .row-toggle, .ms-toggle, .ms-panel, .ms-search { border-radius: 2px; }
+.kpi { border-bottom: 2px solid var(--accent); }
+.kpi-sub { margin-top: 6px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.kpi-delta { font-weight: 700; }
+.kpi-delta.up { color: var(--accent); }
+.kpi-delta.down { color: #A63D40; }
+.kpis-dom { margin-top: -4px; }
+.kpis-dom .kpi { border-bottom: 2px dashed var(--accent); flex: 0 1 240px; }
+.kpi-dom-card { cursor: pointer; }
+.kpi-dom-card:hover { background: var(--hover-bg); }
+.kpi-dom-note { flex: 1 1 100%; align-self: center; font-size: 11px; color: var(--text-muted); padding: 2px 4px; }
+.dom-memo-sup { font-size: 9px; color: var(--text-muted); }
+.kpi .label { text-transform: uppercase; letter-spacing: .07em; font-size: 10.5px; }
+.kpi .value { font-variant-numeric: tabular-nums; }
+.chart-box { padding: 14px 16px; }
+/* Every digit rendered as a figure takes tabular spacing - columns of amounts
+   and KPI values align vertically instead of dancing with proportional widths. */
+table.dataTable td, table.dataTable th, .dom-memo .v, .summary-bar, .kpi .weighted-pct { font-variant-numeric: tabular-nums; }
+table.dataTable thead th { border-bottom: 1px solid var(--border); }
+.summary-bar { font-weight: 600; }
+.page-intro { margin: 0 0 16px 0; }
 `;
 
 // Reusable multi-select widget JS (All / one / multi), identical contract on every tab that uses it.
@@ -318,7 +587,12 @@ const INTRO_EN = {
   introYoyProdFamily: 'The same year-over-year comparison as the Customers tab, grouped by Product Family - click + next to a Brand to break it down by Family1.',
   introYoyPartId: 'The same year-over-year comparison as the Customers tab, taken down to individual Part ID.',
   introYoyNetNetMargin: 'The same comparison as the Customers tab, built on the Net Net (further-deducted) basis instead of the invoice-level NET figure.',
-  introCustomerQuarter: 'Net margin by customer across the four quarters of 2026, rather than a two-year comparison.'
+  introCustomerQuarter: 'Net margin by customer across the four quarters of 2026, rather than a two-year comparison.',
+  // Domestic's English fallback is deliberately NOT retyped here - it points
+  // at DOM_EN (above I18N_JS), the very object I18N_JS.en is spliced from, so
+  // this map and the dictionary can never drift the way the introDashboard
+  // copy has ("5 charts" at the dashboard's own <p> vs "6 charts" here).
+  introDomestic: DOM_EN.introDomestic
 };
 
 // =========================================================================
@@ -335,7 +609,13 @@ const INTRO_EN = {
 // on every detail row, detailKeyColIdx is blank ONLY on a group-total row -
 // that blankness is the one signal used everywhere below to tell the two
 // row kinds apart, rather than a separate flag column.
-function buildDataTablesHtml(header, rows, title, scrollX, filterColumns, drilldown, titleKey, kpiPie, introKey, yoyRankCol, defaultSortCol, groupBy) {
+// actionKey (13th, optional): I18N key of this page's static bilingual
+// conclusion line (ACTION_EN above supplies the English pre-fill, same trick
+// as introKey/INTRO_EN). sourceNote (14th, optional): build-time source
+// footnote - island filename + report period + FX as-of text. Language-
+// neutral data (filenames/dates), so it is emitted verbatim under a
+// translated "Sources" label leaf in both modes; it never carries a {token}.
+function buildDataTablesHtml(header, rows, title, scrollX, filterColumns, drilldown, titleKey, kpiPie, introKey, yoyRankCol, defaultSortCol, groupBy, actionKey, sourceNote) {
   if (scrollX === undefined) scrollX = true;
   if (!filterColumns) filterColumns = [];
   const defaultSortColIdx = defaultSortCol ? header.indexOf(defaultSortCol) : -1;
@@ -418,15 +698,17 @@ ${kpiPie ? `
   border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-weight: 500;
 }
 .total-index-filters .ms-panel { min-width: 260px; }
-.total-index-year-row { margin-bottom: 10px; }` : ''}</style>
+.total-index-year-row { margin-bottom: 10px; }` : ''}${MCKINSEY_CSS}</style>
 </head>
 <body>
+${actionKey ? `<p class="action-title" data-i18n="${actionKey}">${ACTION_EN[actionKey] || ''}</p>` : ''}
 ${introKey ? `<p class="page-intro" data-i18n="${introKey}">${INTRO_EN[introKey] || ''}</p>` : ''}
 ${kpiPie ? `
 <h3 data-i18n="totalIndexHeading" style="margin:0 0 8px 0; color: var(--accent);">Total Index</h3>
 ${filterColumns.length ? '<div class="total-index-filters" id="totalIndexFilters"></div>' : ''}
 <div class="kpis total-index-year-row" id="totalIndexKpis2026"></div>
 <div class="kpis total-index-year-row" id="totalIndexKpis2025"></div>` : ''}
+<div class="exhibit-kicker"><span data-i18n="exhibitWord">Exhibit</span> 1</div>
 <div class="summary-bar" id="summaryBar" data-title-key="${titleKey || ''}" data-count-str="${rowCountStr}">${title} - ${rowCountStr} rows</div>
 <div class="toolbar">
   <button id="exportBtn" data-i18n="exportCsv">Export CSV (filtered)</button>
@@ -438,6 +720,7 @@ ${filterColumns.length ? '<div class="total-index-filters" id="totalIndexFilters
   <thead><tr id="dataTableHeadRow"></tr></thead>
   <tbody></tbody>
 </table>
+${sourceNote ? `<div class="source-foot"><span data-i18n="footSource">Sources</span> — ${sourceNote}</div>` : ''}
 <script>${jqueryJs}</script>
 <script>${dataTablesJs}</script>
 <script>
@@ -1131,9 +1414,90 @@ const monthValues = Array.from(new Set(dashRows.map(r => r[1]))).filter(Boolean)
 const custValues = Array.from(new Set(dashRows.map(r => r[2]))).filter(Boolean).sort();
 const vendValues = Array.from(new Set(dashRows.map(r => r[3]))).filter(Boolean).sort();
 const countryValues = Array.from(new Set(dashRows.map(r => r[4]))).filter(Boolean).sort();
+// Display name of the REPORT (user decision 2026-11-09: the deliverable now
+// covers sales, margin, purchase and domestic - "Performance", not "Sales".
+// File and repo names intentionally keep the historic MTC Sales Report slug.)
 const reportTitle = monthValues.length
-  ? 'MTC Sales Report - ' + monthValues[0] + (monthValues.length > 1 ? ' to ' + monthValues[monthValues.length - 1] : '')
-  : 'MTC Sales Report';
+  ? 'MTC Performance Report - ' + monthValues[0] + (monthValues.length > 1 ? ' to ' + monthValues[monthValues.length - 1] : '')
+  : 'MTC Performance Report';
+// Consulting convention: every tab ends with a source line (island filename +
+// report period + FX basis). These are the shared pieces; the per-tab island
+// names are passed at each call site. Language-neutral by design (filenames
+// and yyyy-mm dates read the same in EN and 中文 modes).
+const reportPeriodRange = monthValues.length
+  ? 'Report period ' + monthValues[0] + (monthValues.length > 1 ? ' to ' + monthValues[monthValues.length - 1] : '')
+  : 'Report period FY2025-FY2026';
+const FX_SOURCE = 'FX: Platinum Buy Rate per the Exchange Rate tab (exrate_usd.json)';
+// The Domestic islands are LOADED here (moved up verbatim from their old spot
+// in the Domestic section, which still references these same consts) because
+// the Dashboard's footnote cites fx_domestic.json's as-of string, and the
+// Dashboard template is evaluated at its own line - JS const declarations
+// must precede the first use. readJsonOptional is a hoisted function
+// declaration, so calling it at this position is safe.
+const domesticJson = readJsonOptional('domestic.json');
+const fxDomesticJson = readJsonOptional('fx_domestic.json');
+const fxAsOfNote = fxDomesticJson
+  ? (fxDomesticJson.file + ', as-of ' + fxDomesticJson.asOf)
+  : 'fx_domestic.json (not found at build time)';
+
+// ---- Dashboard DOMESTIC index strip ---------------------------------------
+// Summary-level memo straight from the two islands. NOT filter-reactive by
+// design: the source workbook is a static snapshot (its as-of date is shown
+// on the card), and the figures are a DERIVED USD memo - never added to the
+// MA/DI totals above them. Same derivation rule as the Domestic tab:
+// USD = local x (HkdRate / Unit) / USD-row HkdRate, with the RMB->CNY alias
+// or both China rows silently drop out. DOMESTIC_FX_ALIAS is declared here
+// (module scope, ahead of the Dashboard template) and shared with the
+// Domestic tab builder further down.
+const DOMESTIC_FX_ALIAS = { RMB: 'CNY' };
+let domMemo = null;
+if (domesticJson && fxDomesticJson && domesticJson.tableA && domesticJson.tableB && Array.isArray(fxDomesticJson.rows)) {
+  const dFx = {};
+  fxDomesticJson.rows.forEach(function (row) { dFx[String(row[1]).trim().toUpperCase()] = row; });
+  const dUsdHkd = dFx.USD ? Number(dFx.USD[3]) : 0;
+  function dUsd(code, value) {
+    if (value === null || value === undefined || value === '' || !dUsdHkd) return null;
+    const k = String(code).trim().toUpperCase();
+    const row = dFx[DOMESTIC_FX_ALIAS[k] || k];
+    if (!row) return null;
+    const unit = Number(row[2]) || 1;
+    return (Number(row[3]) / unit) / dUsdHkd * Number(value);
+  }
+  function dTotals(table) {
+    let sum = 0, ok = true;
+    const curIdx = (table.currencyCol || 4) - 1;
+    const mets = table.metricCols || [5, 6, 7, 8];
+    const totIdx = mets[2] - 1; // the "2026 Total" column
+    table.rows.forEach(function (r) {
+      const v = r[totIdx];
+      if (v === null || v === undefined || v === '') return; // MCN has no 2026 row - skipped like the tab does
+      const u = dUsd(r[curIdx], v);
+      if (u === null) { ok = false; return; }
+      sum += u;
+    });
+    return { sum: sum, ok: ok };
+  }
+  const dA = dTotals(domesticJson.tableA);
+  const dB = dTotals(domesticJson.tableB);
+  domMemo = { sales: dA.sum, comm: dB.sum, complete: dA.ok && dB.ok, asOf: String(domesticJson.asOf || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') };
+  console.log('Domestic memo strip: 2026 derived USD sales ' + Math.round(dA.sum).toLocaleString('en-US') + ' + commission ' + Math.round(dB.sum).toLocaleString('en-US') + (domMemo.complete ? '' : ' (INCOMPLETE - some currencies unresolved)'));
+} else {
+  console.warn('WARNING: domestic islands absent/incomplete - Dashboard DOMESTIC index strip skipped');
+}
+const domStripHtml = domMemo ? (
+  '<div class="kpis kpis-dom">' +
+    '<div class="kpi kpi-dom-card" role="button" tabindex="0">' +
+      '<div class="label"><span data-i18n="kpiDomSales">Domestic Net Sales (USD, derived)</span><sup class="dom-memo-sup">†</sup></div>' +
+      '<div class="value">' + Math.round(domMemo.sales).toLocaleString('en-US') + '</div>' +
+      '<div class="kpi-sub"><span data-i18n="domBasis">2026 total</span> · <span data-i18n="domAsOf">snapshot as of</span> ' + domMemo.asOf + '</div>' +
+    '</div>' +
+    '<div class="kpi kpi-dom-card" role="button" tabindex="0">' +
+      '<div class="label"><span data-i18n="kpiDomCommission">Domestic MTC Commission (USD, derived)</span><sup class="dom-memo-sup">†</sup></div>' +
+      '<div class="value">' + Math.round(domMemo.comm).toLocaleString('en-US') + '</div>' +
+      '<div class="kpi-sub"><span data-i18n="domBasis">2026 total</span> · <span data-i18n="domAsOf">snapshot as of</span> ' + domMemo.asOf + '</div>' +
+    '</div>' +
+    '<div class="kpi-dom-note" data-i18n="domStripNote">† Derived USD memo from the Domestic Orders snapshot — Not included in MA/DI USD totals (source workbook policy). Click a card to open the Domestic tab.</div>' +
+  '</div>') : '';
 
 const dashRowsJsonStr = neutralize(JSON.stringify(dashRows));
 const yearValuesJsonStr = neutralize(JSON.stringify(yearValues));
@@ -1142,23 +1506,168 @@ const custValuesJsonStr = neutralize(JSON.stringify(custValues));
 const vendValuesJsonStr = neutralize(JSON.stringify(vendValues));
 const countryValuesJsonStr = neutralize(JSON.stringify(countryValues));
 
+// ---- GLOBE data island (< 10 KB budget): per-year country aggregates for the
+// Dashboard's 3D earth. Sales mode = Cust_Countries (dashRows col 4) x
+// Net_Sales_USD (col 5); Purchase mode = Country of origin (col 8) x cost
+// (col 6, 'Ttl PO USD' or its 'Matl_USD' alias - same resolved costIdx the KPIs
+// use). Bucketed BY YEAR because the dashboard's Year multiselect defaults to
+// 2026 and the globe must match that default view exactly (MEXICO/COLOMBIA/
+// DENMARK are 2025-only destinations and must be absent from it); the client
+// sums the buckets for whichever years are selected, so selecting both years
+// reproduces the all-time KPI totals too. Marker size + share% are computed
+// client-side from these sums (GPR sizes 12..100, main.js:181-190).
+// Ledger names never in COUNTRY_COORDS get h:null: console-warned HERE at
+// build time AND surfaced on the page - never silently re-pointed to some
+// default city like GPR's '上海' fallback does (main.js:185).
+const MIDDLE_EAST_HUB = { city: '利雅得', lon: 46.71, lat: 24.71 }; // user-confirmed: Riyadh
+const COUNTRY_COORDS = {
+  // 15 sales-side destinations (ledger values, normalized):
+  AUSTRALIA: '悉尼', CANADA: '多伦多', COLOMBIA: '波哥大', DENMARK: '哥本哈根',
+  GERMANY: '柏林', HK: '香港', INDIA: '孟买', JAPAN: '东京', KOREA: '首尔',
+  MEXICO: '墨西哥城', 'MIDDLE-EAST': MIDDLE_EAST_HUB.city, SINGAPORE: '新加坡',
+  THAILAND: '曼谷', UK: '伦敦', USA: '纽约',
+  // Country-of-origin side (BRIEF addendum: 6 more coords or 87.27% of 2026
+  // cost would drop into the unlocated list - CHINA alone is 10.77M USD):
+  CHINA: '上海', TAIWAN: '台北', VIETNAM: '河内', ITALY: '米兰',
+  INDONESIA: '雅加达', BANGLADESH: '达卡',
+};
+const globeByYear = {};
+function globeBucket(year, mode, name) {
+  if (!globeByYear[year]) globeByYear[year] = { sales: {}, purchase: {} };
+  const b = globeByYear[year][mode];
+  if (!b[name]) b[name] = { usd: 0, n: 0 };
+  return b[name];
+}
+dashRows.forEach(function (r) {
+  const y = String(r[0] == null ? '' : r[0]).trim();
+  if (!y) return;
+  const dest = String(r[4] == null ? '' : r[4]).trim();
+  if (dest) { const e = globeBucket(y, 'sales', dest); e.usd += r[5]; e.n += 1; }
+  const orig = String(r[8] == null ? '' : r[8]).trim();
+  if (orig) { const e = globeBucket(y, 'purchase', orig); e.usd += r[6]; e.n += 1; }
+});
+const globeUnlocated = { sales: [], purchase: [] };
+const globeAggYears = {};
+Object.keys(globeByYear).sort().forEach(function (y) {
+  globeAggYears[y] = {};
+  ['sales', 'purchase'].forEach(function (mode) {
+    const map = globeByYear[y][mode];
+    const total = Object.keys(map).reduce(function (s, k) { return s + map[k].usd; }, 0);
+    const list = Object.keys(map).sort(function (a, b) { return map[b].usd - map[a].usd; }).map(function (name) {
+      const hub = COUNTRY_COORDS[name.trim().toUpperCase()];
+      if (!hub && globeUnlocated[mode].indexOf(name) < 0) globeUnlocated[mode].push(name);
+      return { c: name, h: hub || null, usd: map[name].usd, n: map[name].n, s: total ? map[name].usd / total * 100 : 0 };
+    });
+    globeAggYears[y][mode] = list;
+    globeAggYears[y][mode + 'Total'] = total;
+  });
+});
+if (globeUnlocated.sales.length) console.warn('GLOBE: unlocated sales-destination value(s), no marker drawn: ' + globeUnlocated.sales.join(', '));
+if (globeUnlocated.purchase.length) console.warn('GLOBE: unlocated country-of-origin value(s), no marker drawn: ' + globeUnlocated.purchase.join(', '));
+const globeAgg = {
+  v: 1,
+  unit: { sales: 'Net_Sales_USD (dashRows col 5)', purchase: 'Ttl PO USD or Matl_USD (dashRows col 6)' },
+  years: globeAggYears,
+  unlocated: globeUnlocated,
+};
+const globeDataIsland = escapeIsland(JSON.stringify(globeAgg), 'globe data island');
+if (globeDataIsland.length > 10240) {
+  throw new Error('GLOBE BUILD GUARD: mtc-globe-data island is ' + globeDataIsland.length + ' B - over the 10 KB budget');
+}
+console.log('Globe islands: three ' + (threeIsland.length / 1024).toFixed(0) + ' KB, land ' + (landIsland.length / 1024).toFixed(0) +
+  ' KB, data ' + (globeDataIsland.length / 1024).toFixed(2) + ' KB (' + Object.keys(globeAggYears).length +
+  ' year bucket(s); unlocated: sales=[' + globeUnlocated.sales.join(',') + '] purchase=[' + globeUnlocated.purchase.join(',') + '])');
+
+// ---- GLOBE CSS for the Dashboard sheet. The 15 --globe-* token names are
+// IDENTICAL to the GPR engine's (build/styles-original/app.css :37-51 dark and
+// :72-86 light) so globe.js needs zero color-code changes - only the VALUES are
+// restated into MTC's navy family (ink #051C2C, accent #1a5c8a, deep navy
+// #123f5e, muted gold + brick as the only warm notes). They are defined on
+// :root / :root[data-theme="dark"] because the engine's tok() reads
+// getComputedStyle(documentElement) - body-scoped vars would be invisible to
+// it (exactly the skill's dark-smear common mistake). Numerics keep GPR's
+// per-theme values (.28/.9/.88/.1/.28 dark; .86/.2/.75/.15/.2 light).
+const GLOBE_CSS = `
+  /* globe tokens - light (default). Deliberately deeper than GPR's paper
+     values (#dfe7f1/#f4f8fc read near-white against a white card - headless
+     screenshot review 2026-11-09): the lit ocean stays a clear cool gray-blue
+     so the planet silhouette separates from --card-bg, and the land ink is
+     the navy family's darkest. Token NAMES identical to GPR; only values. */
+  :root {
+    --globe-deep: #b9cbdc; --globe-sea: #d3e0ec; --globe-land: #174d73; --globe-landnight: #7d99b4;
+    --globe-city: #b4690e; --globe-coast: #123f5e; --globe-grid: #9db0c4; --globe-air: #7fa0c2;
+    --globe-node: #1a5c8a; --globe-node-warn: #A63D40;
+    --globe-night-k: .86; --globe-air-a: .2; --globe-coast-a: .75; --globe-grid-a: .15; --globe-orbit-a: .2;
+  }
+  /* globe tokens - dark */
+  :root[data-theme="dark"] {
+    --globe-deep: #041220; --globe-sea: #0e3350; --globe-land: #4f8fc0; --globe-landnight: #1c3d5a;
+    --globe-city: #C4B891; --globe-coast: #8fb8d8; --globe-grid: #274761; --globe-air: #4d8fb8;
+    --globe-node: #5fb2c4; --globe-node-warn: #d9a441;
+    --globe-night-k: .28; --globe-air-a: .9; --globe-coast-a: .88; --globe-grid-a: .1; --globe-orbit-a: .28;
+  }
+  .globe-section { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px 10px; margin: 0 0 14px 0; box-shadow: var(--shadow); }
+  .globe-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .globe-eyebrow { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); }
+  .globe-head h3 { margin: 2px 0 0 0; font-size: 15px; color: var(--accent); }
+  .globe-modes { display: flex; gap: 6px; }
+  .globe-mode { border: 1px solid var(--border); background: var(--input-bg); color: var(--text); padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+  .globe-mode.on { background: var(--accent); border-color: var(--accent); color: #ffffff; font-weight: bold; }
+  .globe-stage { position: relative; }
+  #globeEarth { position: relative; width: 100%; height: min(56vh, 600px); min-height: 360px; }
+  /* The report-wide "canvas { max-height: 320px }" default would crush the
+     globe canvas into the same band as the Chart.js charts - exempt it here. */
+  #globeEarth canvas { max-height: none; }
+  .globe-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px; pointer-events: none; }
+  .globe-ok .globe-status { display: none; }
+  .globe-ok .geo-fallback { display: none; }
+  .globe-section.globe-fail #globeEarth { display: none; }
+  .globe-section.globe-fail .globe-status { position: static; min-height: 40px; }
+  .globe-readout { position: absolute; left: 10px; bottom: 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; min-width: 190px; color: var(--text); }
+  .globe-readout span { display: block; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em; }
+  .globe-readout strong { display: block; font-size: 14px; margin-top: 1px; }
+  .globe-readout b { display: block; font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .globe-legend { position: absolute; right: 10px; top: 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px; font-size: 11px; color: var(--text); width: 272px; max-height: calc(100% - 20px); overflow-y: auto; }
+  .globe-legend .lg-k { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+  .globe-legend .lg-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 52px 38px; align-items: center; gap: 6px; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border-light); padding: 4px 2px; cursor: pointer; font-variant-numeric: tabular-nums; color: var(--text); font-size: 11px; }
+  .globe-legend .lg-row[disabled] { cursor: default; opacity: .55; }
+  .globe-legend .lg-row:hover, .globe-legend .lg-row.sel { background: var(--hover-bg); }
+  .globe-legend .lg-no { color: var(--text-muted); font-size: 9px; }
+  .globe-legend .lg-c { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .globe-legend .lg-v { text-align: right; }
+  .globe-legend .lg-p { color: var(--text-muted); text-align: right; }
+  .globe-legend .lg-track { grid-column: 2 / -1; height: 2px; background: var(--border-light); }
+  .globe-legend .lg-track i { display: block; height: 2px; background: var(--accent); }
+  .globe-legend .lg-s { margin-top: 6px; font-size: 9px; color: var(--text-muted); }
+  .globe-foot { margin-top: 6px; font-size: 10.5px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .globe-foot .globe-unlocated { color: var(--accent); }
+  @media (max-width: 700px) { .globe-legend { position: static; width: auto; max-height: none; margin-top: 8px; } #globeEarth { min-height: 300px; } }
+`;
+
 const dashboardHtml = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>Dashboard</title>
-<style>${dataTablesCss}${SHARED_CSS}
+<style>${dataTablesCss}${SHARED_CSS}${GLOBE_CSS}
   h2 { color: var(--accent); margin-top: 0; }
   /* Overrides the report-wide "canvas { max-height: 320px }" default - each
      trend chart's per-point labels carry a YoY % ("1.8M (-35.8% YoY)"),
      noticeably longer than a bare value, and 16 bars (2025+2026 x 8 months)
      side by side need more vertical room than the standard height allows. */
   #chartSalesCost, #chartMargin { max-height: 420px; }
+${MCKINSEY_CSS}
 </style>
 </head>
 <body>
 <h2 data-i18n="dashboardH2">MTC Sales &amp; Margin Performance</h2>
-<p class="page-intro" data-i18n="introDashboard">Filter by year, month, customer, vendor or country - 4 KPIs and 5 charts update instantly.</p>
+<!-- Action title: the page's one-line conclusion, computed by renderAction()
+     from the same aggregates as the KPI cards (never hand-typed, so it cannot
+     drift). Filled on the first render() below and on every filter/theme/
+     language re-render - no data-i18n attribute here on purpose: applyLanguage's
+     textContent sweep would fight renderAction for this element. -->
+<p class="action-title" id="dashAction"></p>
+<p class="page-intro" data-i18n="introDashboard">Filter by year, month, customer, vendor or country - the 3D trade globe, 4 KPIs and 6 charts update instantly.</p>
 <div class="filters">
   <div><label class="fl" data-i18n="filterYear">Year</label><div class="ms" id="ms-year"></div></div>
   <div><label class="fl" data-i18n="filterMonth">Month</label><div class="ms" id="ms-month"></div></div>
@@ -1168,37 +1677,67 @@ const dashboardHtml = `<!doctype html>
   <div style="align-self:flex-end"><button id="resetBtn" data-i18n="resetFilters">Reset filters</button></div>
 </div>
 <div class="kpis">
-  <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="kpi-sales">-</div></div>
-  <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="kpi-cost">-</div></div>
-  <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="kpi-margin">-</div></div>
-  <div class="kpi"><div class="label" data-i18n="kpiNetMarginPct">Net Margin %</div><div class="value" id="kpi-marginpct">-</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="kpi-sales">-</div><div class="kpi-sub"><span id="kpi-sales-prior">-</span><span class="kpi-delta" id="kpi-sales-delta"></span></div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="kpi-cost">-</div><div class="kpi-sub"><span id="kpi-cost-prior">-</span><span class="kpi-delta" id="kpi-cost-delta"></span></div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="kpi-margin">-</div><div class="kpi-sub"><span id="kpi-margin-prior">-</span><span class="kpi-delta" id="kpi-margin-delta"></span></div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMarginPct">Net Margin %</div><div class="value" id="kpi-marginpct">-</div><div class="kpi-sub"><span id="kpi-marginpct-prior">-</span><span class="kpi-delta" id="kpi-marginpct-delta"></span></div></div>
+</div>
+${domStripHtml}
+<div class="globe-section" id="globeSection">
+  <div class="globe-head">
+    <div>
+      <div class="globe-eyebrow"><span data-i18n="exhibitWord">Exhibit</span> 1 — <span data-i18n="globeKicker">Global Trade Flow</span></div>
+      <h3 data-i18n="globeTitle">Where the money goes - and where it comes from</h3>
+    </div>
+    <div class="globe-modes" role="group" aria-label="Globe mode">
+      <button type="button" class="globe-mode on" id="globeModeSales" data-i18n="globeModeSales">Global Sales</button><button type="button" class="globe-mode" id="globeModePurchase" data-i18n="globeModePurchase">Global Purchase</button>
+    </div>
+  </div>
+  <div class="globe-stage">
+    <div class="globe-status" id="globeStatus" data-i18n="globeBuilding">Building the 3D earth...</div>
+    <div id="globeEarth" aria-label="3D globe of MTC trade flows"></div>
+    <div class="globe-readout"><span id="globeReadoutLabel">-</span><strong id="globeReadoutName">-</strong><b id="globeReadoutValue">-</b></div>
+    <div class="globe-legend" id="globeLegend"></div>
+  </div>
+  <div class="globe-foot">
+    <span class="globe-help" data-i18n="globeHelp">Drag to rotate - hover a marker for the readout - click one to open the Data tab pre-filtered</span>
+    <span class="globe-note" data-i18n="globeNote">Marker hubs are indicative capital/economic-city positions; every USD figure comes straight from the embedded DATA ledger (Net Sales / Net Cost).</span>
+    <span class="globe-unlocated" id="globeUnlocatedNote"></span>
+  </div>
 </div>
 <div class="charts">
   <div class="chart-box wide">
+    <div class="exhibit-kicker"><span data-i18n="exhibitWord">Exhibit</span> 2</div>
     <canvas id="chartSalesCost"></canvas>
   </div>
 </div>
 <div class="charts">
   <div class="chart-box wide">
+    <div class="exhibit-kicker"><span data-i18n="exhibitWord">Exhibit</span> 3</div>
     <canvas id="chartMargin"></canvas>
   </div>
 </div>
 <div class="charts">
   <div class="chart-box">
+    <div class="exhibit-kicker"><span data-i18n="exhibitWord">Exhibit</span> 4</div>
     <canvas id="chartVendor"></canvas>
   </div>
   <div class="chart-box">
+    <div class="exhibit-kicker"><span data-i18n="exhibitWord">Exhibit</span> 5</div>
     <canvas id="chartCustomer"></canvas>
   </div>
 </div>
 <div class="charts">
-  <div class="chart-box">
+  <div class="chart-box geo-fallback">
+    <div class="exhibit-kicker"><span data-i18n="exhibitWord">Exhibit</span> 6</div>
     <canvas id="chartGeo"></canvas>
   </div>
-  <div class="chart-box">
+  <div class="chart-box geo-fallback">
+    <div class="exhibit-kicker"><span data-i18n="exhibitWord">Exhibit</span> 7</div>
     <canvas id="chartOrigin"></canvas>
   </div>
 </div>
+<div class="source-foot"><span data-i18n="footSource">Sources</span> — data_sheet.json (DATA ledger island) · mtc-globe-data island (per-year country aggregates, this page) · ${reportPeriodRange} · ${FX_SOURCE} · derived domestic FX basis: ${fxAsOfNote}</div>
 <script>${jqueryJs}</script>
 <script>${chartJs}</script>
 <script>
@@ -1210,10 +1749,15 @@ var MONTH_VALUES = ${monthValuesJsonStr};
 var CUST_VALUES = ${custValuesJsonStr};
 var VEND_VALUES = ${vendValuesJsonStr};
 var COUNTRY_VALUES = ${countryValuesJsonStr};
-// Fixed categorical colors (validated CVD-safe trio, same as the earlier MTC
-// executive infographic): Sales=navy, Cost=copper, Margin=teal.
-var C_SALES = '#1a5c8a', C_COST = '#b96a2c', C_MARGIN = '#1c7a63';
-var CATEGORY_PALETTE = ['#1a5c8a', '#b96a2c', '#1c7a63', '#7a4fa3', '#c94f4f', '#4f7ac9', '#9c8a1a', '#1a9c8a', '#8a1a5c', '#5c8a1a', '#4f9ec9', '#c98a4f'];
+// Fixed categorical colors, restyled to the consulting palette: one navy
+// family (deep -> light blue ramp + steel grays) plus a single warm note
+// (muted gold). Muted brick #A63D40 is NOT a series color - the token pass
+// reserves it for negatives/cautions only. All six-digit hex on purpose: the
+// bar-in-bar / prior-year datasets append '55' alpha suffixes (e.g.
+// C_SALES + '55'), which breaks on 3-digit or rgb() forms. Legible on both
+// light (#FFFFFF cards) and dark (#12212B cards) backgrounds.
+var C_SALES = '#1A5C8A', C_COST = '#C4A34A', C_MARGIN = '#0F3D5C';
+var CATEGORY_PALETTE = ['#1A5C8A', '#0F3D5C', '#2E7DAF', '#6FA3C7', '#C4A34A', '#9A7B2E', '#3A5566', '#6E8494', '#A3B4C0', '#17456B', '#D8C89A', '#253038'];
 
 // Compact on-chart number format (1.2M / 563K / 850) - full precision stays
 // available on hover (tooltip). Shorter labels are the single biggest lever
@@ -1381,6 +1925,15 @@ function withLabelHeadroom(values) {
 var charts = {};
 var lastRows = [];
 
+// Two-year same-period comparison on every card (GPR dashboard convention):
+// the big number stays the filtered current total; the sub-line shows the
+// SAME CALENDAR MONTHS last year plus the +/- change, using priorYearSums -
+// the identical basis the action title and the trend chart's YoY annotations
+// use, so a card can never contradict the exhibits below it. Colors encode
+// DIRECTION only (up=accent, down=brick), not good/bad: a cost decline reads
+// as a fall, viewers judge whether that is good. No prior-year data for the
+// shown months (e.g. Year=2025 with no 2024 rows) prints an em dash, never a
+// fake 0% or a crash.
 function renderKpis() {
   var rows = lastRows;
   var sales = 0, cost = 0, margin = 0;
@@ -1389,6 +1942,65 @@ function renderKpis() {
   document.getElementById('kpi-cost').textContent = fmt(cost);
   document.getElementById('kpi-margin').textContent = fmt(margin);
   document.getElementById('kpi-marginpct').textContent = sales ? (margin / sales * 100).toFixed(1) + '%' : '-';
+  var months = Array.from(new Set(rows.map(function (r) { return r[1]; }))).filter(Boolean).sort();
+  var prior = priorYearSums(months);
+  var pS = 0, pC = 0, pM = 0;
+  Object.keys(prior.sales).forEach(function (k) { pS += prior.sales[k] || 0; pC += prior.cost[k] || 0; pM += prior.margin[k] || 0; });
+  var hasPrior = Object.keys(prior.sales).length > 0;
+  var priorLabel = '—';
+  if (months.length) {
+    var p0 = priorYearMonth(months[0]), p1 = priorYearMonth(months[months.length - 1]);
+    priorLabel = (p0 === p1) ? p0 : p0 + ' → ' + p1;
+  }
+  function card(id, curText, prvOk) {
+    var el = document.getElementById('kpi-' + id + '-prior');
+    var dl = document.getElementById('kpi-' + id + '-delta');
+    if (!hasPrior || !prvOk) { el.textContent = t('kpiVsLabel') + ' ' + priorLabel + ': —'; dl.textContent = ''; dl.className = 'kpi-delta'; return; }
+    el.textContent = t('kpiVsLabel') + ' ' + priorLabel + ': ' + curText.p;
+    dl.textContent = curText.d;
+    dl.className = 'kpi-delta ' + (curText.dir > 0 ? 'up' : (curText.dir < 0 ? 'down' : ''));
+  }
+  function pctTxt(cur, prv) {
+    if (!prv) return { p: '—', d: '—', dir: 0 };
+    var ch = (cur - prv) / prv * 100;
+    return { p: fmt(prv), d: (ch >= 0 ? '+' : '') + ch.toFixed(1) + '%', dir: Math.sign(ch) };
+  }
+  card('sales', pctTxt(sales, pS), pS);
+  card('cost', pctTxt(cost, pC), pC);
+  card('margin', pctTxt(margin, pM), pM);
+  var curPct = sales ? margin / sales * 100 : null;
+  var prvPct = pS ? pM / pS * 100 : null;
+  var pp = (curPct !== null && prvPct !== null) ? { p: prvPct.toFixed(1) + '%', d: (curPct - prvPct >= 0 ? '+' : '') + (curPct - prvPct).toFixed(1) + ' pp', dir: Math.sign(curPct - prvPct) } : { p: '—', d: '—', dir: 0 };
+  card('marginpct', pp, prvPct !== null);
+}
+// ---- Action title (consulting convention: a chart page opens with its
+// conclusion, not its label). One line computed from the SAME aggregates the
+// KPI cards show, plus the true YoY delta over exactly the months currently
+// displayed - priorYearSums is the same same-months-last-year basis the two
+// trend charts' YoY annotations use, so the headline can never contradict the
+// exhibits under it. Placeholders {S}/{D}/{M}/{P}/{T} live in the
+// actionDashboard i18n string (en + zh), so language toggle only swaps the
+// template; the numbers recompute from the current filters either way.
+// .neg marks a down-year (muted brick, the reserved negative color).
+function renderAction() {
+  var rows = lastRows;
+  var sales = 0, margin = 0;
+  rows.forEach(function (r) { sales += r[5]; margin += r[7]; });
+  var months = Array.from(new Set(rows.map(function (r) { return r[1]; }))).filter(Boolean).sort();
+  var prior = priorYearSums(months);
+  var priorSales = Object.keys(prior.sales).reduce(function (s, k) { return s + (prior.sales[k] || 0); }, 0);
+  var delta = priorSales ? (sales - priorSales) / priorSales * 100 : null;
+  var deltaTxt = delta === null ? '—' : (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%';
+  var period = months.length ? (months.length > 1 ? months[0] + ' to ' + months[months.length - 1] : months[0]) : '—';
+  var s = t('actionDashboard')
+    .replace('{S}', fmtCompact(sales))
+    .replace('{D}', deltaTxt)
+    .replace('{M}', fmtCompact(margin))
+    .replace('{P}', sales ? (margin / sales * 100).toFixed(1) + '%' : '—')
+    .replace('{T}', period);
+  var el = document.getElementById('dashAction');
+  el.textContent = s;
+  el.classList.toggle('neg', delta === null ? margin < 0 : delta < 0);
 }
 
 // ---- Monthly Trend: Sales/Cost/Margin, as paired bars (prior-year month
@@ -1709,16 +2321,29 @@ function renderGeo() {
 function render() {
   lastRows = getFiltered();
   renderKpis();
+  renderAction();
   renderSalesCostTrend();
   renderMarginTrend();
   renderVendor();
   renderCustomer();
-  renderGeo();
-  renderOrigin();
+  // Globe module (deferred) registers window.globeUpdateHook and sets
+  // window.globeSuccess on a live 3D earth. Until the earth proves itself the
+  // two geo charts keep rendering as the visible fallback; once it succeeds
+  // they're display:none (.globe-ok .geo-fallback) so re-drawing hidden
+  // canvases on every filter change would be pure waste - skipped.
+  if (window.globeUpdateHook) window.globeUpdateHook();
+  if (!window.globeSuccess) { renderGeo(); renderOrigin(); }
 }
 
 function applyTheme(theme) {
   document.body.setAttribute('data-theme', theme);
+  // GLOBE contract: globe.js caches CSS tokens off documentElement and
+  // invalidates on documentElement[data-theme] mutations + the kit:theme event
+  // (globe.js:13-17 + 496). MTC's toggle historically only touched BODY -
+  // without these two lines the earth would stay dark on the light theme
+  // (skill's named "dark smear" failure). Chart.defaults work stays as before.
+  document.documentElement.setAttribute('data-theme', theme);
+  window.dispatchEvent(new CustomEvent('kit:theme'));
   Chart.defaults.color = theme === 'dark' ? '#c8ccd4' : '#333333';
   Chart.defaults.borderColor = theme === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
 }
@@ -1735,9 +2360,254 @@ document.getElementById('resetBtn').onclick = function () {
 };
 render();
 </script>
+<script id="mtc-three" type="application/json">${threeIsland}</script>
+<script id="mtc-land" type="application/json">${landIsland}</script>
+<script id="mtc-globe-data" type="application/json">${globeDataIsland}</script>
+<script type="module">
+${globeJsSrc}
+/* ===== MTC globe boot glue (Dashboard sheet) =====
+   Ported from GPR main.js:144-190. The spike (2026-11-09) proved dynamic
+   import() of a blob:text/javascript ESM module works inside an iframe
+   document created via srcdoc from a file:// parent, in BOTH Chromium and
+   WebKit - so the srcdoc architecture stays and fallback B (standalone
+   blob-document iframe) is not needed. */
+var GLOBE_AGG = JSON.parse(document.getElementById('mtc-globe-data').textContent);
+var globeMode = 'sales';
+var globeApi = null, globeTried = false, globeThreePromise = null;
+// loadThree: verbatim port of GPR main.js:149-158 (island id mtc-three,
+// memoized promise, revoke after 5s like the shipped GPR page).
+function globeLoadThree() {
+  if (!globeThreePromise) {
+    globeThreePromise = (async function () {
+      var src = JSON.parse(document.getElementById('mtc-three').textContent);
+      var url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      try { return await import(url); } finally { setTimeout(function () { URL.revokeObjectURL(url); }, 5000); }
+    })();
+  }
+  return globeThreePromise;
+}
+// Year multiselect drives which island buckets are summed; [] means "All".
+// Other dashboard filters (customer/vendor/month/country) deliberately do
+// not move the globe - it is driven by the build-time island (10 KB budget),
+// not the full live row set.
+function globeYearsSelected() {
+  var sel = (window.msYear && msYear.getSelected()) || [];
+  return sel.length ? sel : (window.YEAR_VALUES || Object.keys(GLOBE_AGG.years));
+}
+// Markers are computed LIVE from lastRows - the EXACT filtered rows the KPI
+// cards and action title sum (user fix 2026-11-09: the old per-year island
+// honoured the Year filter but ignored Month/Country/Customer/Vendor, so the
+// earth could contradict the numbers above it). Sales mode sums col5
+// (Net_Sales_USD) by col4 Cust_Countries; purchase mode sums col6 cost by col8
+// Country of origin. GLOBE_AGG stays in the file purely as the name->hub
+// coordinate reference (+ the build-time unlocated warnings).
+var globeHubMap = null;
+function globeHubs() {
+  if (globeHubMap) return globeHubMap;
+  globeHubMap = {};
+  Object.keys(GLOBE_AGG.years || {}).forEach(function (y) {
+    var b = GLOBE_AGG.years[y];
+    ['sales', 'purchase'].forEach(function (m) {
+      (b[m] || []).forEach(function (e) { if (!(e.c in globeHubMap)) globeHubMap[e.c] = e.h; });
+    });
+  });
+  return globeHubMap;
+}
+function globeData() {
+  var hubs = globeHubs();
+  var salesMode = globeMode === 'sales';
+  var byName = {}, total = 0;
+  lastRows.forEach(function (r) {
+    var name = String(salesMode ? r[4] : r[8] || '').trim();
+    if (!name) name = String(salesMode ? r[4] : r[8]).trim();
+    if (!name || name === 'null' || name === 'undefined') return;
+    var v = salesMode ? r[5] : r[6];
+    if (typeof v !== 'number' || !isFinite(v)) v = 0;
+    if (!byName[name]) byName[name] = { c: name, h: hubs[name] || null, usd: 0, n: 0 };
+    byName[name].usd += v; byName[name].n += 1;
+    total += v;
+  });
+  var list = Object.keys(byName).map(function (k) { return byName[k]; });
+  list.sort(function (a, b) { return b.usd - a.usd; });
+  return { list: list, total: total };
+}
+// Marker sizing 12..100 exactly like GPR globeMarkers (main.js:184-188), but
+// entries whose hub is null are console-warned + skipped - NEVER re-pointed
+// to a default city (GPR's main.js:185 '上海' fallback is deliberately not
+// ported).
+function globeMarkerList() {
+  var d = globeData();
+  var max = d.list.reduce(function (m, e) { return Math.max(m, e.usd); }, 0) || 1;
+  var un = {};
+  var out = [];
+  d.list.forEach(function (e) {
+    if (!e.h) { un[e.c] = 1; return; }
+    out.push({ city: e.h, country: e.c, usd: e.usd, n: e.n, v: Math.max(12, e.usd / max * 100) });
+  });
+  var names = Object.keys(un);
+  if (names.length) console.warn('GLOBE: no hub coordinate, no marker drawn (' + globeMode + '): ' + names.join(', '));
+  return out;
+}
+function globeEsc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function globeReadout(mk) {
+  var d = globeData();
+  document.getElementById('globeReadoutLabel').textContent = t(globeMode === 'sales' ? 'globeUnitSales' : 'globeUnitPurchase');
+  if (mk) {
+    var share = d.total ? (mk.usd / d.total * 100) : 0;
+    document.getElementById('globeReadoutName').textContent = mk.country;
+    document.getElementById('globeReadoutValue').textContent = Math.round(mk.usd).toLocaleString() + '  (' + share.toFixed(1) + '%)';
+  } else {
+    document.getElementById('globeReadoutName').textContent = t('globeAllMarkets') + ' - ' + d.list.length;
+    document.getElementById('globeReadoutValue').textContent = Math.round(d.total).toLocaleString();
+  }
+  // 1:1 row<->marker highlight: whatever drove this readout (marker hover via
+  // onHover, or a rank row's mouseover) marks the matching row .sel.
+  var box = document.getElementById('globeLegend');
+  if (box) {
+    var rws = box.querySelectorAll('.lg-row');
+    for (var i = 0; i < rws.length; i++) {
+      rws[i].classList.toggle('sel', !!mk && rws[i].getAttribute('data-country') === mk.country);
+    }
+  }
+}
+// GPR-style performance rank list, 1:1 with the drawn markers: same source
+// (globeData()'s mode- and filter-aware buckets), same desc-by-value order,
+// one row per marker (hubless values stay in totals but get a dimmed,
+// non-clickable row instead of vanishing). Rows are buttons: hover previews
+// in the readout + highlights the matching marker's row, click spins the
+// earth to the hub and fires the SAME mtcDrilldown contract as a marker
+// click (Data tab pre-filtered by Cust_Countries / Country of origin).
+function globeLegend(d) {
+  var html = '<div class="lg-k">' + t('globeLegendTitle') + '</div>';
+  var max = d.list.length ? d.list[0].usd : 1;
+  d.list.forEach(function (e, i) {
+    var pct = d.total ? (e.usd / d.total * 100) : 0;
+    var no = (i + 1 < 10 ? '0' : '') + (i + 1);
+    var tw = max ? (e.usd / max * 100).toFixed(1) : '0';
+    html = html + '<button type="button" class="lg-row"' + (e.h ? '' : ' disabled') + ' data-country="' + globeEsc(e.c) + '" data-hub="' + globeEsc(e.h || '') + '" data-usd="' + e.usd + '">'
+      + '<span class="lg-no">' + no + '</span>'
+      + '<span class="lg-c">' + globeEsc(e.c) + '</span>'
+      + '<span class="lg-v">' + fmtCompact(e.usd) + '</span>'
+      + '<span class="lg-p">' + pct.toFixed(1) + '%</span>'
+      + '<span class="lg-track"><i style="width:' + tw + '%"></i></span></button>';
+  });
+  html = html + '<div class="lg-s">' + t('globeSizeLegend') + '</div>';
+  document.getElementById('globeLegend').innerHTML = html;
+}
+function globePaint() {
+  var d = globeData();
+  if (globeApi) globeApi.setMarkers(globeMarkerList());
+  globeLegend(d);
+  var names = (GLOBE_AGG.unlocated && GLOBE_AGG.unlocated[globeMode]) || [];
+  document.getElementById('globeUnlocatedNote').innerHTML = names.length
+    ? '<span>' + t('globeUnlocatedNote') + '</span> ' + globeEsc(names.join(', ')) : '';
+  globeReadout(null);
+}
+async function globeEnsure() {
+  if (globeTried) return;
+  globeTried = true;
+  try {
+    var probe = document.createElement('canvas');
+    if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) throw new Error('WebGL unavailable');
+    // Mirror any theme the shell already applied onto documentElement BEFORE
+    // the first token read, so a dark-mode viewer never sees a light frame.
+    var bt = document.body.getAttribute('data-theme');
+    if (bt && document.documentElement.getAttribute('data-theme') !== bt) {
+      document.documentElement.setAttribute('data-theme', bt);
+      window.dispatchEvent(new CustomEvent('kit:theme'));
+    }
+    var THREE = await globeLoadThree();
+    if (globeApi) return;
+    globeApi = makeGlobe(THREE, document.getElementById('globeEarth'), {
+      routes: [],
+      markers: globeMarkerList(),
+      onPick: function (marker) {
+        // Same proven drilldown contract as the geo chart bar (and the table
+        // cells): shell switches to the Data tab and pre-filters it.
+        var filters = {};
+        filters[globeMode === 'sales' ? 'Cust_Countries' : 'Country of origin'] = marker.country;
+        window.parent.postMessage({ type: 'mtcDrilldown', targetTab: 'Data', filters: filters }, '*');
+      },
+      onHover: globeReadout
+    });
+    window.globeSuccess = true;
+    document.body.classList.add('globe-ok');
+    globePaint();
+    globeFocusTop(); // start the story facing the biggest market (GPR main.js:173 pattern)
+  } catch (err) {
+    console.warn('Globe initialization failed', err);
+    document.getElementById('globeSection').classList.add('globe-fail');
+    var st = document.getElementById('globeStatus');
+    st.removeAttribute('data-i18n'); // else a later language sweep rewrites the failure line back to "Building..."
+    st.textContent = t('globeFailed');
+    // The two fallback charts are still rendered and visible (render() only
+    // skips them once window.globeSuccess is true) - nothing else to undo.
+  }
+}
+// Spin the globe to face the mode's biggest market - on init and on an
+// explicit mode switch only (never on filter repaints, so a user drag is
+// never fought). api.focus is the shipped GPR easing (globe.js:481-493).
+function globeFocusTop() {
+  if (!globeApi) return;
+  var top = globeData().list.filter(function (e) { return !!e.h; })[0];
+  if (top) globeApi.focus(top.h);
+}
+document.getElementById('globeModeSales').addEventListener('click', function () { globeMode = 'sales'; globeSetModeOn(); globePaint(); globeFocusTop(); });
+document.getElementById('globeModePurchase').addEventListener('click', function () { globeMode = 'purchase'; globeSetModeOn(); globePaint(); globeFocusTop(); });
+function globeSetModeOn() {
+  document.getElementById('globeModeSales').className = 'globe-mode' + (globeMode === 'sales' ? ' on' : '');
+  document.getElementById('globeModePurchase').className = 'globe-mode' + (globeMode === 'purchase' ? ' on' : '');
+}
+// DOMESTIC memo cards -> open the Domestic tab through the shell's proven
+// drilldown postMessage (empty filters; the shell typeof-guards the missing
+// applyExternalFilter on that sheet, so nothing else happens).
+Array.prototype.forEach.call(document.querySelectorAll('.kpi-dom-card'), function (c) {
+  function go() { window.parent.postMessage({ type: 'mtcDrilldown', targetTab: 'Domestic', filters: {} }, '*'); }
+  c.addEventListener('click', go);
+  c.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+});
+
+// Rank-list interactions (event delegation survives globePaint re-renders).
+(function () {
+  var box = document.getElementById('globeLegend');
+  box.addEventListener('mouseover', function (e) {
+    var row = e.target.closest ? e.target.closest('.lg-row') : null;
+    if (row && !row.disabled) {
+      globeReadout({ country: row.getAttribute('data-country'), usd: parseFloat(row.getAttribute('data-usd')) || 0 });
+    }
+  });
+  box.addEventListener('mouseleave', function () { globeReadout(null); });
+  box.addEventListener('click', function (e) {
+    var row = e.target.closest ? e.target.closest('.lg-row') : null;
+    if (!row || row.disabled) return;
+    var country = row.getAttribute('data-country');
+    var hub = row.getAttribute('data-hub');
+    if (hub && globeApi) globeApi.focus(hub);
+    var filters = {};
+    filters[globeMode === 'sales' ? 'Cust_Countries' : 'Country of origin'] = country;
+    window.parent.postMessage({ type: 'mtcDrilldown', targetTab: 'Data', filters: filters }, '*');
+  });
+})();
+window.globeUpdateHook = globePaint;
+// Lazy first build: only when the host actually scrolls into view (panels
+// paint first, three.js compile lands ~1-2 s later - same UX as GPR).
+(function () {
+  var host = document.getElementById('globeEarth');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (ents) {
+      if (ents[0].isIntersecting) { io.disconnect(); globeEnsure(); }
+    }, { rootMargin: '200px 0px' });
+    io.observe(host);
+  } else {
+    globeEnsure();
+  }
+})();
+</script>
 </body>
 </html>`;
-console.log('Dashboard built (' + (dashboardHtml.length / 1024 / 1024).toFixed(2) + ' MB)');
+console.log('Dashboard built (' + (dashboardHtml.length / 1024 / 1024).toFixed(2) + ' MB, incl. globe islands)');
 
 // =========================================================================
 // Data sheet (full detail table)
@@ -1746,14 +2616,16 @@ const dataSheetHtml = buildDataTablesHtml(H, dataSheet.rows, 'Data', true,
   // The last 4 columns here exist so a YoY-tab drilldown click always has a
   // matching toolbar filter/dropdown to land on and visibly show as applied.
   ['Cust_name', 'VEND_NAME', 'Cust_Countries', 'yyyy-mm', 'Year', 'Country of origin', 'Fabrication Code', 'Family1', 'Part_id'],
-  null, 'title_data', false, 'introData');
+  null, 'title_data', false, 'introData', null, null, null, 'actionData',
+  'data_sheet.json - full DATA ledger island · ' + reportPeriodRange + ' · ' + FX_SOURCE);
 console.log('Data sheet built (' + (dataSheetHtml.length / 1024 / 1024).toFixed(2) + ' MB)');
 
 // =========================================================================
 // Exchange Rate (USD table only)
 // =========================================================================
 const exRateData = readJson('exrate_usd.json');
-const exRateHtml = buildDataTablesHtml(exRateData.header, exRateData.rows, 'Exchange Rate', false, null, null, 'title_exrate', false, 'introExRate');
+const exRateHtml = buildDataTablesHtml(exRateData.header, exRateData.rows, 'Exchange Rate', false, null, null, 'title_exrate', false, 'introExRate', null, null, null, 'actionExrate',
+  'exrate_usd.json - "Exchange Rate" sheet of the report workbook (Platinum Buy Rate -> USD) · ' + reportPeriodRange);
 
 // =========================================================================
 // YoY comparison sheets - already Excel-formatted display text, plain
@@ -1873,19 +2745,477 @@ const netMarginByCustomer = readJson('net_margin_by_customer.json');
 // Data-tab column name to filter by; labelColCount marks where the year-paired
 // metric columns start (see Export-YoYPivotSheet in the .ps1 for the same counts).
 const yoyCustomersHtml = buildDataTablesHtml(yoyCustomers.header, yoyCustomers.rows, '2026 v 2025 by Customers', false, ['Cust_name'],
-  { labelColCount: 1, dataColMap: { 'Cust_name': 'Cust_name' } }, 'title_yoyCustomers', true, 'introYoyCustomers', true);
+  { labelColCount: 1, dataColMap: { 'Cust_name': 'Cust_name' } }, 'title_yoyCustomers', true, 'introYoyCustomers', true, null, null, 'actionYoyCustomers',
+  'yoy_customers.json - Excel pivot extract (2026 vs 2025 by customer) · ' + reportPeriodRange + ' · ' + FX_SOURCE);
 const yoyFabricationHtml = buildDataTablesHtml(yoyFabrication.header, yoyFabrication.rows, '2026 v 2025 by Fabrication', false, ['Fabrication Code'],
-  { labelColCount: 4, dataColMap: { 'Fabrication Code': 'Fabrication Code', 'Part_id': 'Part_id' } }, 'title_yoyFabrication', true, 'introYoyFabrication', true);
+  { labelColCount: 4, dataColMap: { 'Fabrication Code': 'Fabrication Code', 'Part_id': 'Part_id' } }, 'title_yoyFabrication', true, 'introYoyFabrication', true, null, null, 'actionYoyFabrication',
+  'yoy_fabrication.json - Excel pivot extract (2026 vs 2025 by Fabrication Code) · ' + reportPeriodRange + ' · ' + FX_SOURCE);
 const yoyProdFamilyHtml = buildDataTablesHtml(yoyProdFamily.header, yoyProdFamily.rows, '2026 v 2025 by Prod Family', false, ['Brand', 'Family1'],
   { labelColCount: 3, dataColMap: { 'Brand': 'Family Category', 'Family1': 'Family1' } }, 'title_yoyProdFamily', true, 'introYoyProdFamily', true, null,
-  { groupColIdx: 0, toggleColIdx: 1, detailKeyColIdx: 2 });
+  { groupColIdx: 0, toggleColIdx: 1, detailKeyColIdx: 2 }, 'actionYoyProdFamily',
+  'yoy_prodfamily.json + family_category_map.json (Brand roll-up) · 2026 vs 2025 by Product Family · ' + reportPeriodRange + ' · ' + FX_SOURCE);
 const yoyPartIdHtml = buildDataTablesHtml(yoyPartId.header, yoyPartId.rows, '2026 v 2025 by Part ID', false, ['Part_id'],
-  { labelColCount: 2, dataColMap: { 'Part_id': 'Part_id' } }, 'title_yoyPartId', true, 'introYoyPartId', true);
+  { labelColCount: 2, dataColMap: { 'Part_id': 'Part_id' } }, 'title_yoyPartId', true, 'introYoyPartId', true, null, null, 'actionYoyPartId',
+  'yoy_partid.json - Excel pivot extract (2026 vs 2025 by Part ID) · ' + reportPeriodRange + ' · ' + FX_SOURCE);
 const yoyNetNetMarginHtml = buildDataTablesHtml(yoyNetNetMargin.header, yoyNetNetMargin.rows, '2026 v 2025 by NET NET MARGIN', false, ['Cust_name', 'Country of origin'],
-  { labelColCount: 3, dataColMap: { 'Cust_name': 'Cust_name', 'Country of origin': 'Country of origin', 'Part_id': 'Part_id' } }, 'title_yoyNetNetMargin', true, 'introYoyNetNetMargin', true);
+  { labelColCount: 3, dataColMap: { 'Cust_name': 'Cust_name', 'Country of origin': 'Country of origin', 'Part_id': 'Part_id' } }, 'title_yoyNetNetMargin', true, 'introYoyNetNetMargin', true, null, null, 'actionYoyNetNetMargin',
+  'yoy_netnetmargin.json - Excel pivot extract, Net Net basis (2026 vs 2025) · ' + reportPeriodRange + ' · ' + FX_SOURCE);
 const netMarginByCustomerHtml = buildDataTablesHtml(netMarginByCustomer.header, netMarginByCustomer.rows, 'Net Margin by Customer-Quarter', false, ['Cust_name'],
   { labelColCount: 1, dataColMap: { 'Cust_name': 'Cust_name' }, fixedYear: netMarginByCustomer.year }, 'title_customerQuarter', false, 'introCustomerQuarter',
-  false, 'Net_Sales_USD (Data_AX)');
+  false, 'Net_Sales_USD (Data_AX)', null, 'actionCustomerQuarter',
+  'net_margin_by_customer.json - 2026 net margin by customer-quarter · ' + FX_SOURCE);
+
+// =========================================================================
+// Domestic tab - the 11th page, hand-authored as its own template literal.
+// It is deliberately NOT built by buildDataTablesHtml, for two reasons:
+//  (1) that factory's Total Index / kpiPie path pairs metric columns by the
+//      header pattern "<Metric> 2025" + "<Metric> 2026" (see renderTotalIndex
+//      around :717-726). The Domestic Orders workbook omits 2025 entirely
+//      ("pending confirmation"), so the factory would silently render an empty
+//      KPI block rather than error, and the tab must not imply a YoY read.
+//  (2) its drill-link contract posts {targetTab:'Data'} and the shell resolves
+//      that against the DATA ledger (shell :2039), which holds no domestic
+//      rows at all - so this page is self-contained and offers no drilldown.
+// What it does reuse verbatim: SHARED_CSS tokens for light/dark, I18N_JS for
+// language (the English half is spliced from DOM_EN near :49), and the
+// window-level applyTheme(theme) + applyLanguage(lang) pair that the shell's
+// applyThemeToFrame/applyLanguageToFrame require - without both, the toggle
+// silently does nothing on this tab.
+// Content contract (confirmed with the user, see BRIEF.md): Table A (sales)
+// and Table B (commission/royalty) rendered as one card per currency, so no
+// local amount is ever added across JPY/INR/RMB; the workbook's own caution
+// strings stay visible; USD is derived here from fx_domestic.json (USD per
+// unit = currency HKD rate / the USD row's HKD rate) and captioned as a memo
+// figure that is NOT part of the MA/DI USD totals.
+// =========================================================================
+function readJsonOptional(fileName) {
+  try { return readJson(fileName); } catch (e) {
+    if (e && e.code === 'ENOENT') return null;
+    throw e;
+  }
+}
+// DOMESTIC_FX_ALIAS (RMB -> CNY) is declared once at module scope above the
+// Dashboard template, shared with the memo strip - do not redeclare here.
+// domesticJson / fxDomesticJson load once, above the Dashboard template (the
+// restyle stage's source-footnotes need fx_domestic.json's as-of string there).
+
+const DOMESTIC_CSS = `
+  .dom-title { font-size: 20px; font-weight: 600; margin: 0 0 8px 0; color: var(--text); }
+  .dom-rule { border: 0; border-top: 1px solid var(--accent); margin: 0 0 14px 0; }
+  .dom-action { font-size: 14px; line-height: 1.5; margin: 0 0 6px 0; max-width: 1040px; color: var(--text); }
+  .dom-action .dom-v { font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* --warn is defined by the report-wide token pass when it runs; the literal
+     brick is this page's own fallback so the caution strip is already correct
+     today rather than waiting on that other edit. */
+  .dom-caution { background: var(--card-bg); border: 1px solid var(--border-light); border-left: 3px solid var(--warn, #a63d40); border-radius: 4px; padding: 10px 14px; margin: 14px 0 18px 0; max-width: 1040px; }
+  body[data-theme="dark"] .dom-caution { border-left-color: var(--warn, #c9706f); }
+  .dom-caution-k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+  .dom-caution ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.65; color: var(--text); }
+  .dom-caution li.verbatim { color: var(--text-muted); font-style: italic; }
+  .dom-cards { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  .dom-card { flex: 1 1 460px; min-width: 300px; background: var(--card-bg); border: 1px solid var(--border-light); border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); padding: 12px 14px 14px 14px; }
+  .dom-card-head { border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 2px; }
+  .dom-cur { display: flex; align-items: baseline; gap: 8px; }
+  .dom-cur-code { font-size: 15px; font-weight: 700; color: var(--text); }
+  .dom-cur-market { font-size: 12px; color: var(--text-muted); }
+  .dom-rate { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .dom-kicker { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin: 12px 0 2px 0; }
+  /* The card is one currency's whole story (entity rows x 2 tables), so it has
+     to survive three-up on a 1920 screen: 11px figures, header text allowed to
+     wrap onto two lines, and the entity name allowed to wrap too. Numbers keep
+     nowrap - a split amount ("395,01 6.86") is worse than a wrapped caption. */
+  table.dom-tbl { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
+  .dom-tbl th { font-weight: 600; font-size: 10px; color: var(--text-muted); text-align: right; border-bottom: 1px solid var(--border); padding: 3px 5px; white-space: normal; vertical-align: bottom; line-height: 1.25; }
+  .dom-tbl th.lbl { text-align: left; }
+  .dom-tbl td { text-align: right; padding: 4px 5px; border-bottom: 1px solid var(--border-light); color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dom-tbl td.lbl { text-align: left; white-space: normal; line-height: 1.3; }
+  .dom-tbl td.nil, .dom-tbl th.nil { color: var(--text-muted); }
+  .dom-tbl td.tot, .dom-tbl th.tot { border-left: 1px solid var(--border); }
+  .dom-tbl td.usd, .dom-tbl th.usd { border-left: 1px solid var(--border); }
+  .dom-tbl tfoot td { border-bottom: 0; border-top: 1px solid var(--border); font-weight: 700; }
+  .dom-memo { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+  .dom-memo .v { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dom-sup { font-size: 9px; color: var(--text-muted); }
+  .dom-usdbox { margin: 18px 0 4px 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; max-width: 720px; }
+  .dom-usdbox h3 { margin: 0 0 6px 0; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+  table.dom-usdtbl { border-collapse: collapse; font-size: 12px; width: 100%; }
+  .dom-usdtbl th { text-align: right; font-size: 11px; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); padding: 4px 8px; white-space: nowrap; }
+  .dom-usdtbl th.lbl { text-align: left; }
+  .dom-usdtbl td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--border-light); font-variant-numeric: tabular-nums; color: var(--text); }
+  .dom-usdtbl td.lbl { text-align: left; color: var(--text-muted); }
+  .dom-usdtbl tr.grand td { border-top: 1px solid var(--border); border-bottom: 0; font-weight: 700; }
+  .dom-usdnote { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .dom-notes { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 8px; font-size: 11px; color: var(--text-muted); max-width: 1040px; line-height: 1.6; }
+  .dom-notes-k { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+  .dom-note { margin-bottom: 5px; }
+  .dom-note .k { font-weight: 600; color: var(--text); }
+  .dom-note.warn { color: #a63d40; }
+  body[data-theme="dark"] .dom-note.warn { color: #d98f8e; }
+`;
+
+function buildDomesticHtml(domestic, fx) {
+  if (!domestic || !domestic.tableA || !domestic.tableB) throw new Error('domestic.json is missing tableA/tableB');
+  if (!fx || !Array.isArray(fx.rows)) throw new Error('fx_domestic.json is missing its rows array');
+
+  function esc(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  // Islands ship Value2 numbers, but the documented fallback is the workbook's
+  // own .Text - accept either, and treat a blank/"—" as "no figure" (null),
+  // never as zero: a zero would make a subtotal row look like a real balance.
+  function num(value) {
+    if (typeof value === 'number') return isFinite(value) ? value : null;
+    if (value === null || value === undefined) return null;
+    const s = String(value).trim();
+    if (!s || s === '-' || s === '—' || /not applicable|pending/i.test(s)) return null;
+    const n = Number(s.replace(/,/g, ''));
+    return isFinite(n) ? n : null;
+  }
+  function fmt2(n) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtRate(n) { return String(Math.round(Number(n) * 1e7) / 1e7); }
+  const NIL = '<span class="nil">—</span>';
+
+  // ---- FX: USD per unit of the local currency -----------------------------
+  const fxByCode = {};
+  fx.rows.forEach(function (row) { fxByCode[String(row[1]).trim().toUpperCase()] = row; });
+  if (!fxByCode.USD) throw new Error('fx_domestic.json has no USD row - no USD equivalent can be derived');
+  const usdHkd = Number(fxByCode.USD[3]);
+  function fxRowFor(code) {
+    const key = String(code).trim().toUpperCase();
+    return fxByCode[DOMESTIC_FX_ALIAS[key] || key] || null;
+  }
+  function usdPerUnit(code) {
+    const row = fxRowFor(code);
+    if (!row) return null;
+    const unit = Number(row[2]) || 1; // the sheet's Unit column (100 = rate per 100)
+    return (Number(row[3]) / unit) / usdHkd;
+  }
+
+  // ---- island table -> model (the island's column indexes are 1-based) -----
+  const METRIC_KEYS = {
+    '2026 Shipped': 'domColShipped', '2026 Outstanding': 'domColOutstanding',
+    '2026 Total': 'domColTotal2026', '2027 Outstanding': 'domColOutstanding2027'
+  };
+  function tableModel(sheet, label) {
+    const metricIdxs = sheet.metricCols.map(function (n) { return n - 1; });
+    metricIdxs.forEach(function (i) { if (i < 0 || i >= sheet.header.length) throw new Error('domestic.json ' + label + ': metricCols out of range'); });
+    const entityIdx = sheet.entityCol - 1;
+    const currencyIdx = sheet.currencyCol - 1;
+    const marketIdx = sheet.header.indexOf('Market');
+    // c.i = the column's index in the SOURCE row (1-based island number minus
+    // one); c.k = its index in the trimmed per-row vals array. Reading a value
+    // with c.i instead of c.k silently yields undefined -> "NaN" cells, so the
+    // two are kept as separate named fields rather than reused.
+    const cols = metricIdxs.map(function (i, k) {
+      const h = String(sheet.header[i]).trim();
+      return { i: i, k: k, header: h, key: METRIC_KEYS[h] || null, isTotal: /total/i.test(h) };
+    });
+    const totalCol = cols.filter(function (c) { return c.key === 'domColTotal2026' || c.isTotal; })[0] || null;
+    const laterCol = cols.filter(function (c) { return c !== totalCol && /^20(2[7-9])/.test(c.header); })[0] || null;
+    const priority = cols.filter(function (c) { return c === totalCol; }).concat(cols.filter(function (c) { return c !== totalCol; }));
+    return {
+      label: label, header: sheet.header, cols: cols, totalCol: totalCol, laterCol: laterCol, priority: priority,
+      rows: sheet.rows.map(function (r) {
+        return {
+          entity: String(r[entityIdx] === null || r[entityIdx] === undefined ? '' : r[entityIdx]).trim(),
+          market: marketIdx >= 0 ? String(r[marketIdx] === null || r[marketIdx] === undefined ? '' : r[marketIdx]).trim() : '',
+          currency: String(r[currencyIdx] === null || r[currencyIdx] === undefined ? '' : r[currencyIdx]).trim(),
+          vals: cols.map(function (c) { return num(r[c.i]); })
+        };
+      })
+    };
+  }
+  const modelA = tableModel(domestic.tableA, 'Table A');
+  const modelB = tableModel(domestic.tableB, 'Table B');
+  const models = [modelA, modelB];
+
+  const currencyOrder = [];
+  models.forEach(function (m) { m.rows.forEach(function (r) { if (r.currency && currencyOrder.indexOf(r.currency) < 0) currencyOrder.push(r.currency); }); });
+  const unresolvedFx = currencyOrder.filter(function (code) { return usdPerUnit(code) === null; });
+  unresolvedFx.forEach(function (code) { console.warn('WARNING: Domestic currency ' + code + ' has no row in fx_domestic.json (alias ' + (DOMESTIC_FX_ALIAS[code] || code) + ') - its USD equivalents are blank, the local figures still show.'); });
+
+  function localSum(rows, col) {
+    let s = null;
+    rows.forEach(function (r) { const v = r.vals[col.k]; if (v !== null) s = (s === null ? 0 : s) + v; });
+    return s;
+  }
+  function usdSum(rows, col) {
+    let s = null;
+    rows.forEach(function (r) {
+      const v = r.vals[col.k];
+      if (v === null) return;
+      const rate = usdPerUnit(r.currency);
+      if (rate === null) return;
+      s = (s === null ? 0 : s) + v * rate;
+    });
+    return s;
+  }
+
+  // ---- data-driven action titles + the 2027-only sentence -----------------
+  const fills = {};
+  const aTotalCol = modelA.totalCol, bTotalCol = modelB.totalCol;
+  const aUsd2026 = aTotalCol ? usdSum(modelA.rows, aTotalCol) : null;
+  const bUsd2026 = bTotalCol ? usdSum(modelB.rows, bTotalCol) : null;
+  fills.domActionSales = { entities: String(modelA.rows.length), currencies: String(currencyOrder.length), usd: aUsd2026 === null ? '—' : fmt2(aUsd2026) };
+  fills.domActionCommission = { usd: bUsd2026 === null ? '—' : fmt2(bUsd2026), pct: (aUsd2026 && bUsd2026 !== null) ? (bUsd2026 / aUsd2026 * 100).toFixed(1) : '—' };
+  // Entities with no 2026 figure at all, only a later-year outstanding balance.
+  const pendingRows = modelA.rows.filter(function (r) {
+    return r.vals.every(function (v, i) { return modelA.cols[i] === modelA.laterCol ? true : v === null; })
+      && modelA.laterCol && r.vals[modelA.cols.indexOf(modelA.laterCol)] !== null;
+  });
+  let pendingHtml = '';
+  if (pendingRows.length) {
+    const sameCcy = pendingRows.every(function (r) { return r.currency === pendingRows[0].currency; });
+    const bByName = {};
+    modelB.rows.forEach(function (r) { bByName[r.entity] = r; });
+    const pSum = [0, 0];
+    let pOk = sameCcy;
+    pendingRows.forEach(function (r) {
+      const aV = r.vals[modelA.cols.indexOf(modelA.laterCol)];
+      const bRow = bByName[r.entity];
+      const bV = (bRow && modelB.laterCol) ? bRow.vals[modelB.cols.indexOf(modelB.laterCol)] : null;
+      if (aV === null && bV === null) { pOk = false; return; }
+      pSum[0] += aV || 0; pSum[1] += bV || 0;
+    });
+    if (pOk) {
+      const ccy = pendingRows[0].currency;
+      fills.domActionPending = {
+        names: pendingRows.map(function (r) { return r.entity.split('—')[0].trim(); }).join(', '),
+        sales: ccy + ' ' + fmt2(pSum[0]), comm: ccy + ' ' + fmt2(pSum[1])
+      };
+    }
+  }
+  function fillEn(key) {
+    const toks = fills[key] || {};
+    return String(DOM_EN[key]).replace(/\{(\w+)\}/g, function (m, name) { return Object.prototype.hasOwnProperty.call(toks, name) ? String(toks[name]) : m; });
+  }
+  function actionHtml(key, extraClass) {
+    if (!fills[key]) return '';
+    const withValues = fillEn(key).replace(/(USD [0-9,.]+|[A-Z]{3} [0-9,.]+)/g, '<span class="dom-v">$1</span>');
+    return '<div class="dom-action' + (extraClass ? ' ' + extraClass : '') + '" data-dom-fill="' + key + '">' + withValues + '</div>';
+  }
+
+  // ---- one card per currency ----------------------------------------------
+  function cellValue(v) { return v === null ? NIL : fmt2(v); }
+  function usdCellHtml(r, model) {
+    let principalCol = null, value = null;
+    for (let i = 0; i < model.priority.length; i++) {
+      const c = model.priority[i];
+      if (r.vals[c.k] !== null) { principalCol = c; value = r.vals[c.k]; break; }
+    }
+    if (principalCol === null) return '<td class="usd">' + NIL + '</td>';
+    const rate = usdPerUnit(r.currency);
+    if (rate === null) return '<td class="usd">' + NIL + '</td>';
+    const isLater = !!model.laterCol && principalCol === model.laterCol;
+    const flag = isLater ? '<sup class="dom-sup">†</sup>' : '';
+    const tip = isLater ? ' data-i18n-title="domBasisFlagTitle" title="' + esc(DOM_EN.domBasisFlagTitle) + '"' : '';
+    return '<td class="usd"' + tip + '>' + fmt2(value * rate) + flag + '</td>';
+  }
+  // showMarket: every row of a one-currency card normally sits in the same
+  // market (JPY=Japan, INR=India, RMB=China), and that card header already says
+  // so, so repeating it in a column costs width the figures need. The column
+  // comes back automatically the moment a card ever holds two markets.
+  function tableHtml(model, rows, showMarket) {
+    let html = '<table class="dom-tbl"><thead><tr>';
+    html += '<th class="lbl" scope="col">' + '<span data-i18n="domColEntity">' + esc(DOM_EN.domColEntity) + '</span>' + '</th>';
+    if (showMarket) html += '<th class="lbl" scope="col"><span data-i18n="domColMarket">' + esc(DOM_EN.domColMarket) + '</span></th>';
+    model.cols.forEach(function (c) {
+      const label = c.key ? '<span data-i18n="' + c.key + '">' + esc(model.header[c.i]) + '</span>' : esc(c.header);
+      html += '<th class="' + (c.isTotal ? 'tot' : '') + '" scope="col">' + label + '</th>';
+    });
+    html += '<th class="usd" scope="col"><span data-i18n="domColUsd">' + esc(DOM_EN.domColUsd) + '</span><sup class="dom-sup">†</sup></th>';
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr><td class="lbl">' + esc(r.entity) + '</td>' + (showMarket ? '<td class="lbl">' + esc(r.market) + '</td>' : '');
+      model.cols.forEach(function (c) {
+        const cls = (c.isTotal ? 'tot' : '') + (r.vals[c.k] === null ? ' nil' : '');
+        html += '<td class="' + cls.trim() + '">' + cellValue(r.vals[c.k]) + '</td>';
+      });
+      html += usdCellHtml(r, model) + '</tr>';
+    });
+    html += '</tbody><tfoot><tr>';
+    html += '<td class="lbl" colspan="' + (showMarket ? 2 : 1) + '"><span data-i18n="domSubtotal">' + esc(DOM_EN.domSubtotal) + '</span></td>';
+    model.cols.forEach(function (c) {
+      const s = localSum(rows, c);
+      const cls = (c.isTotal ? 'tot' : '') + (s === null ? ' nil' : '');
+      html += '<td class="' + cls.trim() + '">' + (s === null ? NIL : fmt2(s)) + '</td>';
+    });
+    // No USD figure in the subtotal row on purpose: the rows above can sit on
+    // different bases (2026 Total vs a 2027-only balance), so adding the USD
+    // column would mix them. The memo line below states each basis separately.
+    html += '<td class="usd nil" title="see the memo line">' + NIL + '</td>';
+    html += '</tr></tfoot></table>';
+    return html;
+  }
+  function memoHtml(model, rows) {
+    const parts = model.cols.map(function (c) {
+      const label = c.key ? '<span data-i18n="' + c.key + '">' + esc(model.header[c.i]) + '</span>' : esc(c.header);
+      const s = usdSum(rows, c);
+      return label + ' <span class="v">' + (s === null ? '—' : fmt2(s)) + '</span>';
+    });
+    return '<div class="dom-memo"><span data-i18n="domCardUsdLabel">' + esc(DOM_EN.domCardUsdLabel) + '</span> · ' + parts.join(' · ') + '</div>';
+  }
+  const cardsHtml = currencyOrder.map(function (code) {
+    const rowA = modelA.rows.filter(function (r) { return r.currency === code; });
+    const rowB = modelB.rows.filter(function (r) { return r.currency === code; });
+    const markets = [];
+    rowA.concat(rowB).forEach(function (r) { if (r.market && markets.indexOf(r.market) < 0) markets.push(r.market); });
+    const market = markets.join(' / ');
+    const showMarket = markets.length > 1;
+    const frow = fxRowFor(code);
+    const per = usdPerUnit(code);
+    const hkd = frow ? fmtRate(Number(frow[3]) / (Number(frow[2]) || 1)) + ' HKD' : '— HKD';
+    const perUsdTxt = per === null ? '—' : (Math.round(per * 1e6) / 1e6).toFixed(6);
+    // Spelled out on the card itself: the workbook's "RMB" is the FX sheet's
+    // "CNY", and a reader auditing the derived column must be able to see that
+    // the join crossed a naming gap rather than found an exact match.
+    const fxCcy = frow ? String(frow[1]).trim().toUpperCase() : '';
+    const aliasTxt = (frow && fxCcy !== code.toUpperCase()) ? ' (the FX sheet names this ' + fxCcy + ')' : '';
+    let inner = '';
+    if (rowA.length) inner += '<div class="dom-kicker"><span data-i18n="domSecSales">' + esc(DOM_EN.domSecSales) + '</span></div>' + tableHtml(modelA, rowA, showMarket) + memoHtml(modelA, rowA);
+    if (rowB.length) inner += '<div class="dom-kicker"><span data-i18n="domSecCommission">' + esc(DOM_EN.domSecCommission) + '</span></div>' + tableHtml(modelB, rowB, showMarket) + memoHtml(modelB, rowB);
+    return '<section class="dom-card">'
+      + '<div class="dom-card-head"><div class="dom-cur"><span class="dom-cur-code">' + esc(code) + '</span><span class="dom-cur-market">' + esc(market) + '</span></div>'
+      + '<div class="dom-rate">' + esc(code) + ' 1 = ' + hkd + aliasTxt + ' ÷ USD ' + fmtRate(usdHkd) + ' = ' + perUsdTxt + ' USD</div></div>'
+      + inner + '</section>';
+  }).join('\n');
+
+  // ---- derived USD memo block (the only cross-currency view on the page) ---
+  function memoRowHtml(labelKey, labelEn, colA, colB, isGrand) {
+    const sA = colA ? usdSum(modelA.rows, colA) : null;
+    const sB = colB ? usdSum(modelB.rows, colB) : null;
+    return '<tr' + (isGrand ? ' class="grand"' : '') + '><td class="lbl"><span data-i18n="' + labelKey + '">' + esc(labelEn) + '</span></td>'
+      + '<td' + (sA === null ? ' class="nil"' : '') + '>' + (sA === null ? '—' : fmt2(sA)) + '</td>'
+      + '<td' + (sB === null ? ' class="nil"' : '') + '>' + (sB === null ? '—' : fmt2(sB)) + '</td></tr>';
+  }
+  function colByModel(model, key) { return model.cols.filter(function (c) { return c.key === key; })[0] || null; }
+  let usdBoxRows = '';
+  // 2026-basis lines first, then the 2026 grand line, then the later-year
+  // balance last: the totals above it must never read as if they included it.
+  models[0].cols.forEach(function (c) {
+    if (c.isTotal || c === models[0].laterCol) return; // both drawn explicitly below
+    usdBoxRows += memoRowHtml(c.key || 'domColShipped', c.header, c, colByModel(modelB, c.key), false);
+  });
+  usdBoxRows += memoRowHtml('domUsdTotalLabel', DOM_EN.domUsdTotalLabel, modelA.totalCol, modelB.totalCol, true);
+  const laterA = modelA.laterCol;
+  if (laterA) usdBoxRows += memoRowHtml(laterA.key || 'domColOutstanding2027', laterA.header, laterA, colByModel(modelB, laterA.key), false);
+
+  // ---- footnotes: provenance straight out of the two islands ---------------
+  const usedFxRows = [];
+  currencyOrder.forEach(function (code) { const row = fxRowFor(code); if (row && usedFxRows.indexOf(row) < 0) usedFxRows.push(row); });
+  const fxRatesTxt = usedFxRows.map(function (row) { return String(row[1]).trim() + ' ' + fmtRate(Number(row[3]) / (Number(row[2]) || 1)) + ' HKD'; }).join(' · ') + ' · USD ' + fmtRate(usdHkd) + ' HKD';
+  const syntheticFx = usedFxRows.filter(function (row) { const s = String(row[4] || '').trim(); return s !== '' && s.toLowerCase() !== 'standard'; });
+  let notes = '';
+  notes += '<div class="dom-note"><span class="k" data-i18n="domSourceFile">' + esc(DOM_EN.domSourceFile) + '</span> '
+    + '<span>' + esc(domestic.file) + ' <span data-i18n="domSourceSheetNote">' + esc(DOM_EN.domSourceSheetNote) + '</span>'
+    + (domestic.meta ? ' — ' + esc(domestic.meta) : '') + '</span></div>';
+  // Every prose fragment below is its own data-i18n LEAF (a tagged element
+  // must never wrap another element - applyLanguage sets textContent, which
+  // would wipe the nested span and any marker inside it); everything the
+  // islands themselves supply (file names, titles, dates, rate strings) is
+  // verbatim data and stays untagged in both languages.
+  notes += '<div class="dom-note"><span class="k" data-i18n="domFxSource">' + esc(DOM_EN.domFxSource) + '</span> '
+    + '<span>' + esc(fx.file) + ' — &ldquo;' + esc(fx.title) + '&rdquo; · ' + esc(fx.asOf) + ' · ' + esc(fxRatesTxt) + ' — '
+    + '<span data-i18n="domUsdBasisFormula">' + esc(DOM_EN.domUsdBasisFormula) + '</span></span></div>';
+  syntheticFx.forEach(function (row) {
+    const code = String(row[1]).trim().toUpperCase();
+    const fb = /fallback/i.test(String(row[4] || ''));
+    notes += '<div class="dom-note' + (fb ? ' warn' : '') + '"><span class="k" data-i18n="' + (code === 'INR' ? 'domInrSource' : 'domFxSource') + '">'
+      + esc(code === 'INR' ? DOM_EN.domInrSource : DOM_EN.domFxSource) + '</span> '
+      + (fb ? '<span data-i18n="domInrFallbackWarn">' + esc(DOM_EN.domInrFallbackWarn) + '</span> · ' : '')
+      + '<span>' + esc(row[4]) + '</span></div>';
+  });
+  notes += '<div class="dom-note"><span class="k" data-i18n="domAsOf">' + esc(DOM_EN.domAsOf) + '</span> <span>' + esc(domestic.asOf) + '</span></div>';
+  notes += '<div class="dom-note"><span class="k" data-i18n="domUsdBasisNote">' + esc(DOM_EN.domUsdBasisNote) + '</span> <span><sup class="dom-sup">†</sup> '
+    + '<span data-i18n="domUsdRowSkipNote">' + esc(DOM_EN.domUsdRowSkipNote) + '</span> · <span data-i18n="domUsdBoxCaption">' + esc(DOM_EN.domUsdBoxCaption) + '</span></span></div>';
+  notes += '<div class="dom-note"><span class="k" data-i18n="domNoYoy">' + esc(DOM_EN.domNoYoy) + '</span> · <span data-i18n="domCancelled">' + esc(DOM_EN.domCancelled) + '</span></div>';
+  if (domestic.sourceUrl) {
+    notes += '<div class="dom-note"><span class="k" data-i18n="domMjpSource">' + esc(DOM_EN.domMjpSource) + '</span> <span>' + esc(domestic.sourceUrl) + ' — <span data-i18n="domMjpNote">' + esc(DOM_EN.domMjpNote) + '</span></span></div>';
+  }
+  if (unresolvedFx.length) {
+    notes += '<div class="dom-note warn"><span class="k" data-i18n="domFxMissingLabel">' + esc(DOM_EN.domFxMissingLabel) + '</span> <span>' + esc(unresolvedFx.join(', ')) + ' — <span data-i18n="domFxMissingNote">' + esc(DOM_EN.domFxMissingNote) + '</span></span></div>';
+  }
+  // Source-island provenance line, so an auditor can trace this page back to
+  // the exact _work extracts the PowerShell generator wrote for it.
+  notes += '<div class="dom-note"><span class="k" data-i18n="domIslandsLabel">' + esc(DOM_EN.domIslandsLabel) + '</span> <span>domestic.json · fx_domestic.json</span></div>';
+  const cautionNotes = Array.from(new Set((domestic.notes || []).map(function (s) { return String(s).trim(); })).values())
+    .map(function (s) { return '<li class="verbatim">' + esc(s) + '</li>'; }).join('');
+
+  const domFillsJson = neutralize(JSON.stringify(fills));
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Domestic</title>
+<style>${SHARED_CSS}${DOMESTIC_CSS}${MCKINSEY_CSS}</style>
+</head>
+<body>
+<h1 class="dom-title" data-i18n="title_domestic">${esc(DOM_EN.title_domestic)}</h1>
+<hr class="dom-rule">
+<p class="page-intro" data-i18n="introDomestic">${esc(INTRO_EN.introDomestic)}</p>
+${actionHtml('domActionSales')}
+${actionHtml('domActionCommission')}
+${actionHtml('domActionPending')}
+<div class="dom-caution">
+  <div class="dom-caution-k" data-i18n="domCautionTitle">${esc(DOM_EN.domCautionTitle)}</div>
+  <ul>
+    <li data-i18n="domCautionNoSum">${esc(DOM_EN.domCautionNoSum)}</li>
+    ${cautionNotes}
+    <li data-i18n="domNoYoy">${esc(DOM_EN.domNoYoy)}</li>
+    <li data-i18n="domCancelled">${esc(DOM_EN.domCancelled)}</li>
+  </ul>
+</div>
+<div class="dom-cards">
+${cardsHtml}
+</div>
+<div class="dom-usdbox">
+  <h3 data-i18n="domUsdBoxTitle">${esc(DOM_EN.domUsdBoxTitle)}</h3>
+  <table class="dom-usdtbl">
+    <thead><tr><th class="lbl" scope="col"><span data-i18n="domUsdBasisCol">${esc(DOM_EN.domUsdBasisCol)}</span></th><th scope="col"><span data-i18n="domColSalesShort">${esc(DOM_EN.domColSalesShort)}</span></th><th scope="col"><span data-i18n="domColCommissionShort">${esc(DOM_EN.domColCommissionShort)}</span></th></tr></thead>
+    <tbody>
+${usdBoxRows}
+    </tbody>
+  </table>
+  <div class="dom-usdnote"><sup class="dom-sup">†</sup> <span data-i18n="domUsdBoxCaption">${esc(DOM_EN.domUsdBoxCaption)}</span></div>
+</div>
+<div class="dom-notes">
+  <div class="dom-notes-k" data-i18n="domFootnotesTitle">${esc(DOM_EN.domFootnotesTitle)}</div>
+  ${notes}
+</div>
+<script>
+${I18N_JS}
+var DOM_FILLS = ${domFillsJson};
+function fillKey(key) {
+  var s = t(key);
+  var toks = DOM_FILLS[key] || {};
+  return String(s).replace(/\\{(\\w+)\\}/g, function (m, name) { return Object.prototype.hasOwnProperty.call(toks, name) ? String(toks[name]) : m; });
+}
+function applyTheme(theme) { document.body.setAttribute('data-theme', theme); }
+// Same contract as every other page: chrome only, never an amount. This page
+// has no DataTables instance, so swapping text is the whole job - and it is
+// called once on load as well, so the tab also reads correctly when the file
+// is opened outside the shell (applyLanguageToFrame never fires there).
+function applyLanguage(lang) {
+  currentLang = lang;
+  try { localStorage.setItem('reportLang', lang); } catch (e) {}
+  document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-title]').forEach(function (el) { el.title = t(el.getAttribute('data-i18n-title')); });
+  document.querySelectorAll('[data-dom-fill]').forEach(function (el) { el.textContent = fillKey(el.getAttribute('data-dom-fill')); });
+}
+applyLanguage(currentLang);
+</script>
+</body>
+</html>`;
+}
+
+let domesticHtml = null;
+if (domesticJson && fxDomesticJson) {
+  domesticHtml = buildDomesticHtml(domesticJson, fxDomesticJson);
+  console.log('Domestic sheet built (' + (domesticHtml.length / 1024).toFixed(1) + ' KB)');
+} else {
+  console.warn('WARNING: domestic.json and/or fx_domestic.json not in ' + DIR + ' - skipping the "Domestic" tab');
+}
 
 // =========================================================================
 // Assemble final combined file - tab shell + iframe srcdoc, single self-
@@ -1905,6 +3235,11 @@ const sheetsData = [
   { key: 'yoyPartId', name: 'YoY: Part ID', html: yoyPartIdHtml },
   { key: 'yoyNetNetMargin', name: 'YoY: Net Net Margin', html: yoyNetNetMarginHtml },
   { key: 'customerQuarter', name: 'Customer-Quarter', html: netMarginByCustomerHtml },
+  // Order IS tab order: last of the Sales-side tabs, before the Purchase tab
+  // that gets pushed on the next line. name:'Domestic' stays English for the
+  // postMessage targetTab contract (see the note above), tab_domestic is what
+  // the viewer sees.
+  ...(domesticHtml ? [{ key: 'domestic', name: 'Domestic', html: domesticHtml }] : []),
 ];
 
 // Purchase Report's "YTD by Vendor" tab, lifted verbatim from that project's
@@ -1929,7 +3264,14 @@ function extractPurchaseYtdTab() {
   const sheets = JSON.parse(html.slice(start + anchor.length, jsonEnd).replace(/<\\\/script/gi, '</script'));
   const tab = sheets.find(s => s.key === 'purchaseYtd');
   if (!tab) throw new Error('Purchase report HTML has no "purchaseYtd" tab');
-  return { key: 'purchaseYtdVendor', name: 'Purchase: YTD by Vendor', html: tab.html };
+  // Restyle-stage rule: every tab closes with a source line. This page belongs
+  // to the Purchase project (we must not restyle its internals), so the only
+  // edit is appending a self-styled footer before its own </body> - inline
+  // styles because we cannot assume its document carries our CSS tokens.
+  const foot = '<div style="margin:18px 8px 6px;padding:8px 0 0;border-top:1px solid rgba(128,128,128,.4);font:10.5px/1.55 Calibri,Arial,sans-serif;color:rgba(128,128,128,.95)">Sources / 資料來源: FIN_MTC Purchase Report html (MTC Purchase Report Claude project, embedded as-built) — see that report for its period &amp; FX basis · 期間與匯率基礎詳該採購報表。</div>';
+  const bodyEnd = tab.html.lastIndexOf('</body>');
+  const patchedHtml = bodyEnd >= 0 ? tab.html.slice(0, bodyEnd) + foot + tab.html.slice(bodyEnd) : tab.html;
+  return { key: 'purchaseYtdVendor', name: 'Purchase: YTD by Vendor', html: patchedHtml };
 }
 const purchaseYtdTab = extractPurchaseYtdTab();
 if (purchaseYtdTab) { sheetsData.push(purchaseYtdTab); console.log('Added Purchase: YTD by Vendor tab from', PURCHASE_HTML_PATH); }
@@ -1940,41 +3282,61 @@ const combinedHtml = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <title>${reportTitle}</title>
-<style>
-  body { font-family: Calibri, Arial, sans-serif; margin: 0; padding: 0; }
-  #tabbar { display: flex; background: #1a5c8a; align-items: stretch; }
+<style>${MCKINSEY_CSS}
+  /* Restyle stage: the shell chrome now reads the --shell-* custom properties
+     from MCKINSEY_CSS (defined for light on :root and for dark under
+     body[data-theme="dark"] there) - no literal navy/white rules survive here,
+     so the tab bar and the welcome modal finally follow the theme toggle.
+     Geometry: a flex column, NOT the old calc(100vh - 44px) magic constant -
+     that constant assumed a one-row tab bar; with 11 tabs (#tabs wraps,
+     flex-wrap: wrap) plus the serif masthead, any fixed subtraction either
+     clipped the bottom of the page or left a dead band. The iframe simply
+     takes the remaining height (flex:1; min-height:0) whatever the chrome
+     above it grows to. */
+  body { font-family: Calibri, Arial, sans-serif; margin: 0; padding: 0; background: var(--shell-bg); color: var(--shell-text); display: flex; flex-direction: column; height: 100vh; }
+  #masthead { flex: none; background: var(--shell-card); border-bottom: 1px solid var(--shell-rule); padding: 10px 16px 9px; }
+  #masthead .mast-title { font-family: var(--serif); font-size: 17px; font-weight: 600; color: var(--shell-text); }
+  #masthead .mast-sub { font-size: 11px; color: var(--shell-muted); margin-top: 3px; }
+  #tabbar { display: flex; background: var(--shell-nav); align-items: stretch; flex: none; }
   #tabs { display: flex; padding: 0; margin: 0; list-style: none; flex-wrap: wrap; flex: 1; }
-  #tabs button { background: #1a5c8a; color: white; border: none; padding: 10px 16px; cursor: pointer; font-size: 13px; }
-  #tabs button.active { background: #123f5e; font-weight: bold; }
-  #tabs button:hover { background: #123f5e; }
-  #themeToggle, #langToggle { background: #123f5e; color: white; border: none; padding: 10px 16px; cursor: pointer; font-size: 13px; white-space: nowrap; }
-  #themeToggle:hover, #langToggle:hover { background: #0c2c42; }
-  #langToggle { border-left: 1px solid rgba(255,255,255,0.2); }
-  iframe { width: 100%; height: calc(100vh - 44px); border: none; display: block; }
-  #introOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  #tabs button { background: var(--shell-nav); color: var(--shell-nav-text); border: none; border-right: 1px solid var(--shell-nav-sep); padding: 9px 13px; cursor: pointer; font-size: 12.5px; }
+  #tabs button.active { background: var(--shell-nav-active); color: var(--shell-nav-text); font-weight: bold; box-shadow: inset 0 -2px 0 var(--shell-accent); }
+  #tabs button:hover { background: var(--shell-nav-hover); }
+  #themeToggle, #langToggle { background: var(--shell-nav-active); color: var(--shell-nav-text); border: none; padding: 9px 13px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
+  #themeToggle:hover, #langToggle:hover { background: var(--shell-nav-hover); }
+  #langToggle { border-left: 1px solid var(--shell-nav-sep); }
+  #tabs button:focus-visible, #themeToggle:focus-visible, #langToggle:focus-visible { outline: 2px solid var(--shell-accent); outline-offset: -2px; }
+  iframe { flex: 1 1 auto; min-height: 0; width: 100%; border: none; display: block; }
+  #introOverlay { position: fixed; inset: 0; background: rgba(5,28,44,0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
   #introOverlay.hidden { display: none; }
-  #introModal { background: #ffffff; color: #222; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); max-width: 560px; width: 90%; max-height: 85vh; overflow-y: auto; padding: 24px 28px; }
-  #introModal h2 { color: #1a5c8a; margin: 0 0 4px 0; font-size: 20px; }
-  #introModal .intro-sub { color: #666; font-size: 13px; margin: 0 0 16px 0; }
-  #introModal ul { margin: 0 0 18px 0; padding-left: 20px; font-size: 14px; line-height: 1.7; }
-  #introModal ul + p.intro-note { font-size: 12px; color: #777; margin: 0 0 18px 0; }
+  #introModal { background: var(--shell-card); color: var(--shell-text); border: 1px solid var(--shell-rule); border-radius: 4px; box-shadow: 0 8px 30px rgba(0,0,0,0.35); max-width: 640px; width: 90%; max-height: 85vh; overflow-y: auto; padding: 24px 28px; }
+  #introModal h2 { color: var(--shell-accent); margin: 0 0 4px 0; font-size: 20px; }
+  #introModal .intro-sub { color: var(--shell-muted); font-size: 13px; margin: 0 0 14px 0; }
+  #introModal ul { margin: 0 0 16px 0; padding-left: 20px; font-size: 13px; line-height: 1.7; }
+  #introModal ul b { color: var(--shell-text); }
+  #introModal li { margin-bottom: 4px; }
+  #introModal ul + p.intro-note { font-size: 12px; color: var(--shell-muted); margin: 0 0 16px 0; border-top: 1px solid var(--shell-rule); padding-top: 10px; }
   #introFooter { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  #introFooter label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  #introClose { background: #1a5c8a; color: #fff; border: none; border-radius: 6px; padding: 9px 20px; font-size: 14px; cursor: pointer; }
-  #introClose:hover { background: #123f5e; }
+  #introFooter label { font-size: 13px; color: var(--shell-muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  #introClose { background: var(--shell-accent); color: #ffffff; border: none; border-radius: 3px; padding: 9px 20px; font-size: 14px; cursor: pointer; }
+  #introClose:hover { background: var(--shell-nav-active); }
 </style>
 </head>
 <body>
 <div id="introOverlay" class="hidden">
   <div id="introModal">
-    <h2>👋 Welcome / 歡迎使用</h2>
-    <p class="intro-sub">MTC Sales Report — Interactive Web Version / 互動式網頁版</p>
+    <h2>Welcome / 歡迎使用</h2>
+    <p class="intro-sub">MTC Performance Report — Interactive Web Version / 互動式網頁版</p>
+    <!-- Intro copy v2 (restyle stage, 2026-11-09): describes all 11 tabs -
+     the new 3D trade globe on the Dashboard and the new Domestic tab are the
+     two material additions since v1. The dismiss key below is bumped to
+     reportIntroDismissed_v2 alongside this text, per the versioning rule. -->
     <ul>
-      <li><b>Live filters / 即時篩選</b> — Year, Month, Customer, Vendor, Country on the Dashboard tab — charts and KPIs update together instantly.<br>Dashboard 頁可依年度、月份、客戶、供應商、國家篩選，圖表與 KPI 同步更新。</li>
-      <li><b>Sortable tables + CSV export / 明細表排序與匯出</b> — click a column header to sort; "Export CSV" downloads exactly what's currently filtered.<br>點欄位標題可排序；「Export CSV」只會匯出目前篩選畫面的內容。</li>
-      <li><b>Data tab</b> — the full transaction-level DATA sheet, with quick filters for Customer, Vendor, Country, Month, Year.<br>Data 頁為完整交易明細，可快速篩選客戶、供應商、國家、月份、年度。</li>
-      <li><b>YoY comparison tabs</b> — the five "2026 v 2025 by ..." sheets, exactly as shown in the Excel report.<br>五個「2026 v 2025 by...」年度比較分析頁，與 Excel 報表內容一致。</li>
-      <li><b>🌙 Light/Dark mode</b> — toggle top-right.<br>右上角可切換淡色/深色模式。</li>
+      <li><b>11 tabs / 十一個頁籤</b> — Dashboard, Data, Exchange Rate, five YoY comparisons, Customer-Quarter, <b>Domestic</b>, and Purchase: YTD by Vendor.<br>總覽、明細資料、匯率、五個「2026 對比 2025」年度比較頁、客戶季度毛利、<b>國內訂單</b>、採購：年度供應商排行。</li>
+      <li><b>Dashboard action title + 3D trade globe / 總覽結論標題與 3D 貿易地球</b> — a one-line conclusion computed live, above a full-width procedural earth: toggle Global Sales (destinations) / Global Purchase (origins); click a marker to jump to the Data tab pre-filtered.<br>總覽以即時計算的一行結論開頭，下方為全寬程序化 3D 地球：可切換全球銷售（目的地）／全球採購（原產國），點擊標記即跳至 Data 頁並自動篩選。</li>
+      <li><b>Domestic tab / 國內訂單頁</b> — 2026–2027 domestic orders and MTC commission (MJP · MCN · MZQ · MIN), one card per currency so no local amount is ever added across currencies; USD figures are clearly marked as derived memos.<br>2026–2027 國內訂單與 MTC 佣金（四實體），按貨幣分卡、絕不跨貨幣相加，USD 數字均為明確標示的推算備忘。</li>
+      <li><b>Live filters + sortable tables + CSV / 即時篩選、排序與匯出</b> — Year, Month, Customer, Vendor, Country filters update KPIs and charts together; "Export CSV" saves exactly the filtered view.<br>篩選同步更新 KPI 與圖表；「Export CSV」僅匯出目前篩選結果。</li>
+      <li><b>Consulting chrome / 報告式版面</b> — every exhibit is numbered, every tab closes with its sources, FX basis and report period; light/dark and EN/中文 toggles sit top-right.<br>圖表統一編號、每頁頁尾附資料來源、匯率基礎與報表期間；右上角可切換深淺色及中英文。</li>
     </ul>
     <p class="intro-note">This is the same data as the official Excel report — a convenience for browsing, not a replacement. / 資料與正式 Excel 報表一致，本頁僅為方便瀏覽之用，非取代 Excel 報表。</p>
     <div id="introFooter">
@@ -1982,6 +3344,10 @@ const combinedHtml = `<!doctype html>
       <button id="introClose">Get Started / 開始使用</button>
     </div>
   </div>
+</div>
+<div id="masthead">
+  <div class="mast-title">${reportTitle}</div>
+  <div class="mast-sub">${sheetsData.length} tabs — Sales, Domestic &amp; Purchase in one offline file · ${reportPeriodRange} · FX per the Exchange Rate tab; Domestic memo basis: ${fxAsOfNote}</div>
 </div>
 <div id="tabbar">
   <div id="tabs"></div>
@@ -1998,6 +3364,11 @@ var themeBtn = document.getElementById('themeToggle');
 var langBtn = document.getElementById('langToggle');
 var currentTheme = 'light';
 try { currentTheme = localStorage.getItem('reportTheme') || 'light'; } catch (e) {}
+// Restyle stage: the shell chrome (masthead/tab bar/intro modal) is token-
+// driven via body[data-theme="dark"] in MCKINSEY_CSS, so the shell must now
+// apply the theme to its OWN body too - previously only the iframes got it
+// and the shell stayed navy/white forever (half-done dark mode).
+function applyShellTheme() { document.body.setAttribute('data-theme', currentTheme); }
 function applyThemeToFrame() {
   var win = frameEl.contentWindow;
   if (!win || typeof win.applyTheme !== 'function') return;
@@ -2008,8 +3379,9 @@ function updateThemeBtnLabel() { themeBtn.textContent = currentTheme === 'dark' 
 themeBtn.onclick = function () {
   currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
   try { localStorage.setItem('reportTheme', currentTheme); } catch (e) {}
-  updateThemeBtnLabel(); applyThemeToFrame();
+  updateThemeBtnLabel(); applyShellTheme(); applyThemeToFrame();
 };
+applyShellTheme();
 
 // Language toggle: relabels the tab bar itself plus, via each iframe's own
 // applyLanguage(lang) contract (parallel to applyTheme above), every page's
@@ -2070,10 +3442,10 @@ var introCloseBtn = document.getElementById('introClose');
 // materially, so a returning viewer who dismissed an older version sees the
 // update once, instead of staying permanently hidden by a stale dismissal.
 var introDismissed = false;
-try { introDismissed = localStorage.getItem('reportIntroDismissed_v1') === '1'; } catch (e) {}
+try { introDismissed = localStorage.getItem('reportIntroDismissed_v2') === '1'; } catch (e) {}
 if (!introDismissed) introOverlay.classList.remove('hidden');
 introCloseBtn.onclick = function () {
-  if (introDontShow.checked) { try { localStorage.setItem('reportIntroDismissed_v1', '1'); } catch (e) {} }
+  if (introDontShow.checked) { try { localStorage.setItem('reportIntroDismissed_v2', '1'); } catch (e) {} }
   introOverlay.classList.add('hidden');
 };
 </script>

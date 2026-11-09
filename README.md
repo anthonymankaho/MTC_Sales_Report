@@ -66,17 +66,42 @@ lookup is read by header name from
 required DATA headers and accepts the cost and margin aliases `Ttl PO USD` / `Matl_USD` and
 `TTL PO NET CONT USD` / `Net_Cont_USD`.
 
-The report has ten tabs — Dashboard (KPIs + charts, NET/NET NET toggle), Data (the full
-145-column transaction ledger from the FIN_MTC workbook), Exchange Rate, five YoY (2026
-vs 2025) comparison tabs each with a Total Index and pie chart, Customer-Quarter, and
-Purchase: YTD by Vendor. Every tab supports an English/Traditional Chinese toggle and
+Extraction data is staged as eleven JSON islands under `HTML_Report_Generator\_work` —
+the nine existing ones plus the new `domestic.json` and `fx_domestic.json` — and the
+folder is deleted after each run. Pass `-KeepWork` to keep the islands for inspection:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File PowerShell\Generate-MTCSalesReportHtml.ps1 -KeepWork
+```
+
+`Builder HTML.bat` option 2 is unchanged (runs the generator with no arguments, islands
+cleaned up as before) but now extracts the 11 islands. For the Domestic tab the generator
+additionally reads `Domestic Orders*.xlsx` from the project root — the wildcard matters
+because the real filename contains en/em dashes that PowerShell 5.1 cannot safely hold as
+a literal — and `STANDARD EXCHANGE RATE-2026-09.xls` for the HKD rate table. That table
+has no INR row, so the INR rate is synthesised from the monthly-average USD/INR taken
+from the newest `FIN_Ex Rate_PSBUILD_YYYYMMDD.xlsx` in
+`..\Weekly Exchange Report - CLAUDE\Output` (newest by filename date, never write time;
+the Sep-2026 average is USD/INR 95.50). If that weekly file is missing, the run falls
+back to USD/INR 95.50, prints a loud console warning, and tags the Domestic tab footnote
+with a `FALLBACK` provenance string.
+
+The report has eleven tabs — Dashboard (KPIs, a full-width 3D earth and charts, with the
+NET/NET NET toggle), Data (the full 145-column transaction ledger from the FIN_MTC
+workbook), Exchange Rate, five YoY (2026 vs 2025) comparison tabs each with a Total Index
+and pie chart, Customer-Quarter, Domestic, and Purchase: YTD by Vendor. The Dashboard
+earth toggles between Global Sales (by destination) and Global Purchase (by country of
+origin) and replaces the Geographic bar and Origin pie visually; both charts are kept and
+rendered automatically as a fallback when WebGL is unavailable, and clicking a globe
+marker drills into the Data tab filtered to that country. Every tab supports an English/Traditional Chinese toggle and
 light/dark mode (top right), and clicking any highlighted number or name drills into the
 underlying transactions on the Data tab. Dashboard Sales uses `Net_Sales_USD`, which differs
 from `Total Net Net Sales (USD)` because it does not deduct sales-side invoice commission.
 The report is a self-contained HTML file that can be attached directly to an email.
 
 See [MTC Sales Report Import SOP.docx](<Documentation/MTC Sales Report Import SOP.docx>), section 5, for
-the full write-up.
+the full write-up, and [DOMESTIC-AND-GLOBE-SOP-appendix.md](Documentation/DOMESTIC-AND-GLOBE-SOP-appendix.md)
+for the Domestic data sources, FX rules, and globe drill-down added in the 2026-11-09 cycle.
 
 ## Current progress (2026-11-03)
 
@@ -116,27 +141,38 @@ the full write-up.
 | `Sales & Commission Report-MTC.xlsx`                                   | Commission report                                                                          |
 | `EPI_Purchase Commission Combined.xlsx`                                | Source: commission/PO data from EPICOR                                                     |
 | `IVR032.xlsx`                                                          | Source: monthly sales export                                                               |
-| `STANDARD EXCHANGE RATE-YYYY-MM.xls`                                   | Source: monthly FX rate table                                                              |
+| `STANDARD EXCHANGE RATE-YYYY-MM.xls`                                   | Source: monthly FX rate table; also a generator input — the 2026-09 copy feeds the Domestic `fx_domestic.json` island (no INR row; INR is synthesised from the weekly report below) |
+| `Domestic Orders 2026–2027 — MJP _ MCN _ MZQ _ MIN (for Accounts).xlsx` | Source: Domestic sales (TABLE A) and commission/royalty (TABLE B) for the Domestic tab; the generator reads it via the `Domestic Orders*.xlsx` wildcard (dashes in the name) |
+| `..\Weekly Exchange Report - CLAUDE\Output\FIN_Ex Rate_PSBUILD_YYYYMMDD.xlsx` | Source: monthly-average USD/INR for the Domestic FX island; newest file picked by filename date (Sep-2026 avg 95.50) |
 | `MTC_Import_Rows.xlsx`                                                 | Staged output from`app/index.html`, ready to merge                                       |
 | `PowerShell/Generate-MTCSalesReportHtml.ps1`                           | Extracts data from the FIN_MTC workbook and builds the HTML report                         |
 | `HTML_Report_Generator/build_report.js`                                | Node script that assembles the extracted data into the single-file interactive HTML report |
 | `HTML_Report_Generator/vendor/`                                        | Vendored jQuery, DataTables, and Chart.js used by the generated report                     |
+| `HTML_Report_Generator/vendor/lib/three.module.min.js`                 | Vendored three.js module inlined into the Dashboard 3D earth                               |
+| `HTML_Report_Generator/vendor/data/land-110m.json`                     | World-land TopoJSON used by the globe (coastline hit-test)                                 |
+| `HTML_Report_Generator/globe/globe.js`                                 | 3D earth engine (ported from the Global Purchase Report build)                             |
+| `HTML_Report_Generator/_work/`                                         | Eleven transient JSON islands read by `build_report.js` (incl. `domestic.json`, `fx_domestic.json`); deleted after each run unless `-KeepWork` |
 | `FIN_MTC_Sales_Report_html_TEMP.html`                                  | Output of the HTML report generator — the shareable interactive report                    |
 | `FIN_MTC_Combined_Sales_Purchase_Margin_html_REVISED_20261103.html`     | Validated revised report with the approved Family Category mappings                      |
 
 ## Folder map
 
-- `Documentation/` - SOP, PowerShell list, and workflow presentation.
+- `Documentation/` - SOP (plus the Domestic & globe SOP appendix), PowerShell list, and workflow presentation.
 - `PowerShell/` - MTC workflow scripts; `App/` and `Backup/` contain the staging copy and backup.
 - `Reports/Audit Summaries/` - dated audit summary exports.
 - `Reference/Prompts/` - reusable reference prompts not used by the MTC scripts.
-- `SANDBOX/` - test workbooks, test scripts, and verification artifacts.
-- `202606/`, `202607/`, `202608/`, `202609/` - archived monthly source files and outputs.
+- There is no `SANDBOX/` folder - it was removed in the 2026-11-03 reorg.
+- `202609/` - archived monthly source files and outputs.
 - `Pur Comm/` - archived purchase commission source files. `Margin Report/` is retained as an existing project folder.
 - Keep launchers and active source/master workbooks in the project root. The MTC PowerShell scripts are stored in `PowerShell/`; HTML builder assets remain in `HTML_Report_Generator/`.
 
 ## Notes
 
+- The 2026-11-09 cycle includes a McKinsey-style presentation pass over the whole report:
+  data-driven action titles, "Exhibit n" numbering on chart groups, source footnotes, the
+  shell dark-mode fix, and the flex-based tab-bar geometry fix. All of it is cosmetic —
+  the underlying data logic and islands are unchanged apart from the new Domestic tab and
+  the Dashboard globe.
 - This repo is **private** and contains real sales, commission, and margin data — keep
   it that way.
 - The large `Sales-Data-MTC-Mthly Rate*.xlsx` files are the full master workbooks and are
