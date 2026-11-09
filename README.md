@@ -57,7 +57,7 @@ shared.
 powershell -ExecutionPolicy Bypass -File PowerShell\Generate-MTCSalesReportHtml.ps1
 ```
 
-No arguments are required for the normal monthly case ? the script auto-detects the newest
+No arguments are required for the normal monthly case — the script auto-detects the newest
 matching `FIN_MTC Sales & Margin (...)_YYYYMMDD_R#.xlsx` file in the project folder, reads
 it read-only via Excel COM automation (never modifies the source), and writes
 `FIN_MTC_Sales_Report_html_TEMP.html` to the project root. The `Family1` to `Family Category`
@@ -66,7 +66,7 @@ lookup is read by header name from
 required DATA headers and accepts the cost and margin aliases `Ttl PO USD` / `Matl_USD` and
 `TTL PO NET CONT USD` / `Net_Cont_USD`.
 
-The report has ten tabs ? Dashboard (KPIs + charts, NET/NET NET toggle), Data (the full
+The report has ten tabs — Dashboard (KPIs + charts, NET/NET NET toggle), Data (the full
 145-column transaction ledger from the FIN_MTC workbook), Exchange Rate, five YoY (2026
 vs 2025) comparison tabs each with a Total Index and pie chart, Customer-Quarter, and
 Purchase: YTD by Vendor. Every tab supports an English/Traditional Chinese toggle and
