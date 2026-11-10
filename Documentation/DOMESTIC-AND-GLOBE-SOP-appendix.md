@@ -1,11 +1,14 @@
 # SOP Appendix — Domestic Tab & 3D Globe / SOP 附錄——國內訂單分頁與 3D 地球儀
 
-Companion to *MTC Sales Report Import SOP.docx* (section 5), added with the 2026-11-09
-build cycle (eleven-tab report). Covers: where the Domestic data comes from, the FX
-rules, the reading cautions, globe drill-down behaviour, and troubleshooting.
-*《MTC Sales Report Import SOP.docx》第 5 節的配套附錄,配合 2026-11-09 建置週期
-(十一個分頁的報表)新增。內容:國內訂單資料來源、匯率規則、閱讀注意事項、地球儀
-下鑽行為,以及疑難排解。*
+Written companion to the monthly procedure (with the README and `PowerShell List.md`),
+added with the 2026-11-09 build cycle (eleven-tab report); it supersedes section 5 of the
+former *MTC Sales Report Import SOP.docx*, which was retired 2026-11-10 (archived under
+`Documentation/Archive/`). Covers: where the Domestic data comes from, the FX rules, the
+reading cautions, globe drill-down behaviour, and troubleshooting.
+*本附錄與 README、《PowerShell List.md》一併構成書面流程,配合 2026-11-09 建置週期
+(十一個分頁的報表)新增,取代原《MTC Sales Report Import SOP.docx》第 5 節——該 docx 已於
+2026-11-10 報廢封存(存於 `Documentation/Archive/`)。內容:國內訂單資料來源、匯率規則、
+閱讀注意事項、地球儀下鑽行為,以及疑難排解。*
 
 ## 1. Where the Domestic data comes from / 國內訂單資料來源
 

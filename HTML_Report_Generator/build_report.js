@@ -207,6 +207,7 @@ var I18N = {
     globeAllMarkets: 'All markets', globeLegendTitle: 'Geographic performance - click a row to drill in',
     globeSizeLegend: 'marker size scales with value',
     globeUnlocatedNote: 'No hub coordinate - no marker, but still counted in every figure:',
+    aiBtn: 'Ask AI', aiTitle: 'AI assistant (Qwen)', aiHello: 'Hi - ask about the numbers on this dashboard (totals, YoY, countries, domestic memo). I can suggest filters to apply too.', aiPh: 'e.g. Which month had the lowest sales?', aiSend: 'Send', aiApply: 'Apply', aiOffline: 'Relay offline - start the local Qwen relay (start-proxy) to enable AI. Everything else works normally.', aiOnline: 'Connected', aiClear: 'Clear', aiThinking: 'Thinking...', aiTrunc: '(answer truncated)', aiErrNet: 'No reply from the local relay - is it running?', aiQuota: 'quota {U} / {C} tokens this month', aiName: 'Name:', aiCodePh: 'MTC company AI access code (page session only - leave empty for the local relay)', aiConnect: 'Connect', aiDisclose: 'Sent to the AI service (Cloudflare when a company access code is connected, otherwise the local office relay): current filters and the aggregate figures on this page (KPIs, monthly, country top lists). Never sent: transaction rows or credentials. The access code stays in this page session only.',
     otherCategory: 'Others',
     totalIndexHeading: 'Total Index',
     weightedLabel: 'weighted',
@@ -270,6 +271,7 @@ ${ACTION_EN_JS}
     globeAllMarkets: '全部市場', globeLegendTitle: '地區績效排行 — 點列可鑽入篩選',
     globeSizeLegend: '標記大小依金額縮放',
     globeUnlocatedNote: '無標示座標 — 不畫標記，但所有數字仍照常計入：',
+    aiBtn: '問 AI', aiTitle: 'AI 助理(Qwen)', aiHello: '你好 — 可以問我這份 Dashboard 上的數字(合計、同比、國家、國內附註),我也會建議可直接套用的篩選。', aiPh: '例如:哪個月銷售最低?', aiSend: '送出', aiApply: '套用', aiOffline: '本機 relay 未啟動 — 執行 start-proxy 後即可使用 AI,其餘功能不受影響。', aiOnline: '已連線', aiClear: '清除', aiThinking: '思考中…', aiTrunc: '(回覆被截斷)', aiErrNet: '本機 relay 沒有回應 — 是否已啟動?', aiQuota: '本月用量 {U} / {C} tokens', aiName: '名稱:', aiCodePh: 'MTC 公司 AI 存取碼(僅限本頁面工作階段;留空則使用本機轉接站)', aiConnect: '連線', aiDisclose: '送給 AI 服務的內容(已連線公司存取碼時經 Cloudflare 雲端助理,否則經辦公室本機轉接站):目前篩選與頁面彙總數字(KPI、月度、國家前榜)。絕不送出:交易明細或任何憑證;存取碼只保留於本頁面工作階段。',
     otherCategory: '其他',
     totalIndexHeading: '總計指標',
     weightedLabel: '加權',
@@ -564,6 +566,14 @@ function createMultiSelect(containerId, values, onChange, defaultSelected) {
   updateToggleText();
   return {
     getSelected: function () { return Array.from(selected); },
+    // AI chip + drill programmability: replace the whole selection with an
+    // array of exact values (empty array = no filter, same as "select all").
+    setSelected: function (vals) {
+      selected = new Set(vals || []);
+      checkboxes.forEach(function (cb) { cb.checked = selected.has(cb.value); });
+      allCb.checked = selected.size === 0 || selected.size === checkboxes.length;
+      updateToggleText();
+    },
     reset: function () { selected = new Set(); allCb.checked = true; checkboxes.forEach(function (cb) { cb.checked = true; }); updateToggleText(); }
   };
 }
@@ -2604,6 +2614,343 @@ window.globeUpdateHook = globePaint;
     globeEnsure();
   }
 })();
+
+/* ---- AI assistant panel (Qwen; dual endpoint, GPR-style) ----
+   Default: the SHARED loopback relay at 127.0.0.1:8765 (same machine).
+   If an MTC company AI access code is entered + Connect: the hosted
+   meyer-ai-assistant Cloudflare Worker (/mtc/chat, /mtc/health) - the same
+   pattern as the EIC/GPL panels, so emailed copies work for colleagues
+   without any local install. This file carries NO credential; the worker and
+   relay hold the bearer server-side, enforce the monthly cap, and fail
+   closed. If neither endpoint answers, the panel shows a friendly offline
+   line and the dashboard is untouched. Model text is always rendered with
+   textContent; chat history and the access code live in memory only (page
+   session); the panel nodes are tagged data-ai-exclude for save-copy hygiene. */
+var AI_RELAY = 'http://127.0.0.1:8765';
+var AI_HOSTED = 'https://meyer-ai-assistant.anthonym-354.workers.dev/mtc';
+var DOM_MEMO = ${domMemo ? JSON.stringify(domMemo) : 'null'};
+var aiState = { history: [], busy: false, online: null, mode: 'relay', code: '', lastError: '' };
+var aiUser = 'MTC-report';
+try { aiUser = localStorage.getItem('mtc-ai-user') || 'MTC-report'; } catch (e) { /* srcdoc storage may be unavailable */ }
+
+function aiUsd(v) { return Math.round(v).toLocaleString('en-US'); }
+function aiProbe() {
+  var ctl = new AbortController();
+  setTimeout(function () { ctl.abort(); }, 8000);
+  if (aiState.code) {
+    aiState.mode = 'hosted';
+    return fetch(AI_HOSTED + '/health', { headers: { 'x-meyer-ai-code': aiState.code }, signal: ctl.signal })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }, function () { return { ok: false, b: null }; }); })
+      .then(function (res) {
+        aiState.online = res.ok && res.b && res.b.ok === true;
+        aiState.lastError = aiState.online ? '' : ((res.b && res.b.error) || 'Cloudflare AI service unavailable. Check the company access code and internet connection.');
+        return aiState.online;
+      })
+      .catch(function () { aiState.online = false; aiState.lastError = 'Cannot reach the Cloudflare AI service. Check the access code and internet connection.'; return false; });
+  }
+  aiState.mode = 'relay';
+  aiState.lastError = '';
+  return fetch(AI_RELAY + '/health', { signal: ctl.signal }).then(function (r) { aiState.online = r.ok; return r.ok; })
+    .catch(function () { aiState.online = false; return false; });
+}
+function aiContext() {
+  var rows = lastRows;
+  var sales = 0, cost = 0, margin = 0;
+  rows.forEach(function (r) { sales += r[5]; cost += r[6]; margin += r[7]; });
+  var months = Array.from(new Set(rows.map(function (r) { return r[1]; }))).filter(Boolean).sort();
+  var prior = priorYearSums(months);
+  var pS = 0, pC = 0, pM = 0;
+  Object.keys(prior.sales).forEach(function (k) { pS += prior.sales[k] || 0; pC += prior.cost[k] || 0; pM += prior.margin[k] || 0; });
+  var byM = groupSum(rows, 1, 5);
+  var monthly = months.slice(0, 24).map(function (m) { return m + ':' + aiUsd(byM[m] || 0); }).join(', ');
+  var gd = null;
+  try { if (window.globeSuccess) gd = globeData(); } catch (e) { gd = null; }
+  var L = [];
+  L.push('CURRENT APP: MTC Performance Report - single-file interactive report (NOT MPL_System, NOT the Global Purchase dashboard). Answer only about this MTC report.');
+  L.push('UI_LANGUAGE: ' + (currentLang === 'zh' ? 'zh-Hant (reply in Traditional Chinese)' : 'en (reply in English)'));
+  L.push('DATA PERIOD: ' + (MONTH_VALUES[0] || '?') + ' to ' + (MONTH_VALUES[MONTH_VALUES.length - 1] || '?') + '; ledger rows ' + ROWS.length.toLocaleString('en-US') + '; rows under current filters ' + rows.length.toLocaleString('en-US'));
+  L.push('ACTIVE FILTERS: ' + JSON.stringify({ Year: msYear.getSelected(), Month: msMonth.getSelected(), Customer: msCust.getSelected(), Vendor: msVend.getSelected(), Country: msCountry.getSelected() }));
+  L.push('KPI UNDER FILTERS: netSalesUsd=' + aiUsd(sales) + ', netCostUsd=' + aiUsd(cost) + ', netMarginUsd=' + aiUsd(margin) + ', marginPct=' + (sales ? (margin / sales * 100).toFixed(1) : '0') + '%; sameMonthsLastYear: sales=' + aiUsd(pS) + ', cost=' + aiUsd(pC) + ', margin=' + aiUsd(pM) + ((pS && sales) ? ', salesYoYpct=' + ((sales - pS) / pS * 100).toFixed(1) : ''));
+  if (monthly) L.push('MONTHLY NET SALES (USD): ' + monthly);
+  if (gd) L.push('GLOBE MODE: ' + globeMode + ' - TOP BY USD: ' + gd.list.slice(0, 8).map(function (e) { return e.c + ':' + aiUsd(e.usd) + ' (' + (gd.total ? (e.usd / gd.total * 100).toFixed(1) : '0') + '%)'; }).join(', ') + ' - earth, rank list and KPIs all read ONE filtered dataset');
+  if (DOM_MEMO) L.push('DOMESTIC MEMO (separate snapshot workbook; derived USD, NOT included in the MA/DI totals above): sales2026Usd=' + aiUsd(DOM_MEMO.sales) + ', commission2026Usd=' + aiUsd(DOM_MEMO.comm) + ', asOf=' + DOM_MEMO.asOf + '; entities MJP/JPY, MIN/INR, MCN+MZQ/RMB; no 2025 domestic data yet (pending confirmation)');
+  L.push('ALLOWED FILTER VALUES: Year=[' + YEAR_VALUES.join(', ') + '] Month=[' + MONTH_VALUES.join(', ') + '] Country=[' + COUNTRY_VALUES.join(', ') + '] Customer=[' + CUST_VALUES.slice(0, 40).join(', ') + '] Vendor=[' + VEND_VALUES.slice(0, 40).join(', ') + ']');
+  L.push('ACTION PROPOSALS: when a filter or navigation would help, add up to 3 lines AT THE END, each exactly one of: FILTER Year=<value> / FILTER Month=<value> / FILTER Country=<value> / FILTER Customer=<value> / FILTER Vendor=<value> / Tab=<Data|Domestic|Exchange Rate> / Mode=<GlobeSales|GlobePurchase>. Values must be copied EXACTLY from ALLOWED FILTER VALUES - never invent. Lines render as buttons; nothing changes until the user clicks.');
+  return L.join('\\n').slice(0, 5800);
+}
+function aiParseActions(reply) {
+  var out = [], keep = [];
+  String(reply).split(/\\r?\\n/).forEach(function (line) {
+    var l = line.trim();
+    var m = l.match(/^FILTER\\s+(Year|Month|Country|Customer|Vendor)=(.+)$/);
+    var mt = l.match(/^Tab=(Data|Domestic|Exchange Rate)$/);
+    var md = l.match(/^Mode=(GlobeSales|GlobePurchase)$/);
+    var okv = false;
+    if (m) {
+      var k = m[1], v = m[2].trim();
+      okv = (k === 'Year') ? YEAR_VALUES.indexOf(v) >= 0
+        : (k === 'Month') ? MONTH_VALUES.indexOf(v) >= 0
+        : (k === 'Country') ? COUNTRY_VALUES.indexOf(v) >= 0
+        : (k === 'Customer') ? CUST_VALUES.indexOf(v) >= 0
+        : VEND_VALUES.indexOf(v) >= 0;
+      if (okv && out.length < 3) out.push({ kind: 'filter', key: k, value: v }); else keep.push(line);
+    } else if (mt && out.length < 3) { out.push({ kind: 'tab', value: mt[1] }); }
+    else if (md && out.length < 3) { out.push({ kind: 'mode', value: md[1] }); }
+    else keep.push(line);
+  });
+  return { text: keep.join('\\n').trim(), actions: out };
+}
+function aiApplyAction(a) {
+  if (a.kind === 'filter') {
+    if (a.key === 'Year') msYear.setSelected([a.value]);
+    else if (a.key === 'Month') msMonth.setSelected([a.value]);
+    else if (a.key === 'Country') msCountry.setSelected([a.value]);
+    else if (a.key === 'Customer') msCust.setSelected([a.value]);
+    else msVend.setSelected([a.value]);
+    render();
+  } else if (a.kind === 'tab') {
+    window.parent.postMessage({ type: 'mtcDrilldown', targetTab: a.value, filters: {} }, '*');
+  } else {
+    globeMode = (a.value === 'GlobeSales') ? 'sales' : 'purchase';
+    globeSetModeOn(); globePaint(); globeFocusTop();
+  }
+}
+function aiBubble(role, text, actions) {
+  var wrap = document.createElement('div');
+  wrap.className = 'ai-msg ' + role;
+  wrap.setAttribute('data-ai-exclude', '1');
+  var body = document.createElement('div');
+  body.textContent = text;
+  wrap.appendChild(body);
+  (actions || []).forEach(function (a) {
+    var chip = document.createElement('button');
+    chip.type = 'button'; chip.className = 'ai-chip';
+    var lbl = a.kind === 'filter' ? (a.key + ': ' + a.value) : (a.kind === 'tab' ? ('Go: ' + a.value) : ('Earth: ' + a.value));
+    chip.textContent = t('aiApply') + ' ' + lbl;
+    chip.addEventListener('click', function () {
+      try { aiApplyAction(a); chip.disabled = true; } catch (e) { chip.textContent = t('aiErrNet'); }
+    });
+    wrap.appendChild(chip);
+  });
+  return wrap;
+}
+function aiStatusHtml() {
+  var s = document.getElementById('ai-status');
+  if (!s) return;
+  if (aiState.online === false) {
+    s.innerHTML = '<i class="ai-dot off"></i><span></span>';
+    s.lastElementChild.textContent = (aiState.mode === 'hosted' && aiState.lastError) ? aiState.lastError : t('aiOffline');
+    var i0 = document.getElementById('ai-input'); if (i0) i0.disabled = true;
+    var b0 = document.getElementById('ai-send'); if (b0) b0.disabled = true;
+  } else {
+    s.innerHTML = '<i class="ai-dot on"></i><span></span><span class="ai-quota"></span><button type="button" class="ai-clear"></button>';
+    s.children[1].textContent = t('aiOnline') + (aiState.mode === 'hosted' ? ' - Cloudflare' : ' - relay');
+    s.querySelector('.ai-clear').textContent = t('aiClear');
+    s.querySelector('.ai-clear').addEventListener('click', function () {
+      aiState.history = [];
+      var logEl = document.getElementById('ai-log');
+      logEl.innerHTML = '';
+      logEl.appendChild(aiBubble('sys', t('aiHello'), null));
+    });
+    var i1 = document.getElementById('ai-input'); if (i1) i1.disabled = aiState.busy;
+    var b1 = document.getElementById('ai-send'); if (b1) b1.disabled = aiState.busy;
+  }
+}
+function aiSend(message) {
+  var logEl = document.getElementById('ai-log');
+  logEl.appendChild(aiBubble('user', message, null));
+  var thinking = aiBubble('sys', t('aiThinking'), null);
+  logEl.appendChild(thinking);
+  logEl.scrollTop = logEl.scrollHeight;
+  aiState.busy = true;
+  var inp = document.getElementById('ai-input'), snd = document.getElementById('ai-send');
+  if (inp) inp.disabled = true; if (snd) snd.disabled = true;
+  var ctl = new AbortController();
+  setTimeout(function () { ctl.abort(); }, 90000);
+  var aiBase = aiState.mode === 'hosted' ? AI_HOSTED : AI_RELAY;
+  var aiHeaders = { 'content-type': 'application/json' };
+  if (aiState.mode === 'hosted') aiHeaders['x-meyer-ai-code'] = aiState.code;
+  fetch(aiBase + '/chat', {
+    method: 'POST', headers: aiHeaders, signal: ctl.signal,
+    body: JSON.stringify({ username: aiUser, message: message, history: aiState.history.slice(-12), context: aiContext() })
+  }).then(function (r) {
+    return r.json().catch(function () { return null; }).then(function (j) { return { ok: r.ok, j: j }; });
+  }).then(function (res) {
+    thinking.remove();
+    if (!res.ok || !res.j || res.j.ok !== true) {
+      logEl.appendChild(aiBubble('sys', '⚠ ' + ((res.j && res.j.error) || t('aiErrNet')), null));
+    } else {
+      var parsed = aiParseActions(res.j.reply);
+      var tail = parsed.text + (res.j.truncated ? ('\\n' + t('aiTrunc')) : '');
+      logEl.appendChild(aiBubble('bot', tail || '(empty)', parsed.actions));
+      aiState.history.push({ role: 'user', content: message.slice(0, 2000) });
+      aiState.history.push({ role: 'assistant', content: parsed.text.slice(0, 2000) });
+      if (aiState.history.length > 24) aiState.history.splice(0, aiState.history.length - 24);
+      var q = document.querySelector('.ai-quota');
+      if (q && res.j.quota) q.textContent = t('aiQuota').replace('{U}', Number(res.j.quota.used).toLocaleString('en-US')).replace('{C}', Number(res.j.quota.cap).toLocaleString('en-US'));
+      if (res.j.warn) logEl.appendChild(aiBubble('sys', '⚠ ' + res.j.warn, null));
+    }
+  }).catch(function () {
+    thinking.remove();
+    logEl.appendChild(aiBubble('sys', '⚠ ' + t('aiErrNet'), null));
+    aiProbe().then(function (ok) { if (!ok) aiStatusHtml(); });
+  }).then(function () {
+    aiState.busy = false;
+    if (inp) inp.disabled = false; if (snd) snd.disabled = false;
+    logEl.scrollTop = logEl.scrollHeight;
+    if (inp) inp.focus();
+  });
+}
+function aiClose() {
+  var root = document.getElementById('ai-root');
+  if (root) root.innerHTML = '';
+  if (aiState.winResizeClamp) { window.removeEventListener('resize', aiState.winResizeClamp); aiState.winResizeClamp = null; }
+  // NOTE: #ai-css stays in <head> on purpose - it also styles the #aiBtn FAB,
+  // which the old drawer code removed on close (button lost its styling after
+  // the first open/close cycle). Fixed 2026-11-10 alongside the floating-window change.
+  var btn = document.getElementById('aiBtn'); if (btn) btn.focus();
+}
+/* Floating draggable chat window, per the shared qwen-chat-assistant UI rule:
+   drag by the header (mouse + touch pointer events), always clamped inside the
+   viewport, re-clamped on window resize, header close button stays clickable. */
+function aiMakeDraggable(win) {
+  var head = win.querySelector('.ai-head');
+  var r0 = win.getBoundingClientRect();
+  win.style.right = 'auto'; win.style.bottom = 'auto';
+  win.style.left = r0.left + 'px'; win.style.top = r0.top + 'px';
+  function clamp() {
+    if (!win.isConnected) return;
+    var b = win.getBoundingClientRect();
+    var x = parseFloat(win.style.left), y = parseFloat(win.style.top);
+    if (isNaN(x)) x = b.left; if (isNaN(y)) y = b.top;
+    x = Math.min(Math.max(6, x), Math.max(6, window.innerWidth - b.width - 6));
+    y = Math.min(Math.max(6, y), Math.max(6, window.innerHeight - b.height - 6));
+    win.style.left = x + 'px'; win.style.top = y + 'px';
+  }
+  clamp();
+  head.addEventListener('pointerdown', function (e) {
+    if (e.button) return;
+    if (e.target.closest && e.target.closest('button')) return; // controls stay clickable
+    var b = win.getBoundingClientRect();
+    var dx = e.clientX - b.left, dy = e.clientY - b.top;
+    try { head.setPointerCapture(e.pointerId); } catch (err) {}
+    function mv(ev) {
+      win.style.left = (ev.clientX - dx) + 'px';
+      win.style.top = (ev.clientY - dy) + 'px';
+      clamp();
+    }
+    function up(ev) {
+      try { head.releasePointerCapture(ev.pointerId); } catch (err) {}
+      head.removeEventListener('pointermove', mv);
+      head.removeEventListener('pointerup', up);
+      head.removeEventListener('pointercancel', up);
+    }
+    head.addEventListener('pointermove', mv);
+    head.addEventListener('pointerup', up);
+    head.addEventListener('pointercancel', up);
+    e.preventDefault();
+  });
+  window.addEventListener('resize', clamp);
+  aiState.winResizeClamp = clamp;
+}
+function aiOpen() {
+  if (aiState.winResizeClamp) { window.removeEventListener('resize', aiState.winResizeClamp); aiState.winResizeClamp = null; }
+  var root = document.getElementById('ai-root');
+  root.innerHTML = '<aside class="ai-win" role="dialog" aria-labelledby="ai-title">'
+    + '<header class="ai-head" title="Drag to move / 拖曳移動"><span class="ai-grip">⠿</span><h3 id="ai-title">' + t('aiTitle') + '</h3><button type="button" class="ai-x" id="ai-close" aria-label="close">✕</button></header>'
+    + '<div class="ai-status" id="ai-status"></div>'
+    + '<div class="ai-access"><input id="ai-code" type="password" autocomplete="new-password" maxlength="100"/><button type="button" id="ai-connect"></button></div>'
+    + '<div class="ai-log" id="ai-log"></div>'
+    + '<p class="ai-disclose">' + t('aiDisclose') + '</p>'
+    + '<form class="ai-compose" id="ai-form"><input id="ai-input" type="text" maxlength="4000"/><button class="ai-send" id="ai-send" type="submit"></button></form>'
+    + '<footer class="ai-userbar"><span id="ai-namelbl"></span><input id="ai-user" maxlength="40"/></footer>'
+    + '</aside>';
+  root.querySelector('#ai-input').placeholder = t('aiPh');
+  root.querySelector('#ai-send').textContent = t('aiSend');
+  root.querySelector('#ai-namelbl').textContent = t('aiName');
+  root.querySelector('#ai-user').value = aiUser;
+  aiStatusHtml();
+  document.getElementById('ai-log').appendChild(aiBubble('sys', t('aiHello'), null));
+  document.getElementById('ai-close').addEventListener('click', aiClose);
+  aiMakeDraggable(root.querySelector('.ai-win'));
+  var codeIn = document.getElementById('ai-code'), connBtn = document.getElementById('ai-connect');
+  codeIn.placeholder = t('aiCodePh'); connBtn.textContent = t('aiConnect');
+  codeIn.value = aiState.code;
+  connBtn.addEventListener('click', function () {
+    aiState.code = codeIn.value.trim();
+    aiProbe().then(function () {
+      aiStatusHtml();
+      if (aiState.online) { var ii = document.getElementById('ai-input'); if (ii) ii.focus(); }
+      else if (aiState.mode === 'hosted') {
+        var lg = document.getElementById('ai-log');
+        if (lg) { lg.appendChild(aiBubble('sys', '⚠ ' + (aiState.lastError || 'Cloudflare connection failed.'), null)); lg.scrollTop = lg.scrollHeight; }
+      }
+    });
+  });
+  document.getElementById('ai-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = document.getElementById('ai-input').value.trim();
+    if (!v || aiState.busy) return;
+    document.getElementById('ai-input').value = '';
+    aiSend(v);
+  });
+  document.getElementById('ai-user').addEventListener('change', function () {
+    aiUser = this.value.trim() || 'MTC-report';
+    try { localStorage.setItem('mtc-ai-user', aiUser); } catch (e) { /* fine */ }
+  });
+  aiProbe().then(function (ok) { aiStatusHtml(); });
+  var inp = document.getElementById('ai-input');
+  if (aiState.online !== false && inp) inp.focus();
+}
+(function aiInit() {
+  var st = document.createElement('style');
+  st.id = 'ai-css';
+  st.textContent = '#aiBtn{position:fixed;right:18px;bottom:18px;z-index:60;background:var(--accent);color:#fff;border:0;border-radius:20px;padding:9px 16px;font-size:13px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.25);}#aiBtn:hover{filter:brightness(1.12);}'
+    + '.ai-win{position:fixed;right:16px;bottom:64px;width:390px;max-width:92vw;height:min(560px,84vh);background:var(--bg);color:var(--text);display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 36px rgba(5,28,44,.35);z-index:70;overflow:hidden;}'
+    + '.ai-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border-light);cursor:move;user-select:none;-webkit-user-select:none;touch-action:none;background:var(--card-bg);flex:none;}'
+    + '.ai-grip{color:var(--text-muted);font-size:14px;flex:none;}'
+    + '.ai-head h3{flex:1;margin:0;font-size:15px;font-family:Georgia,serif;}'
+    + '.ai-x{background:none;border:0;font-size:17px;cursor:pointer;color:var(--text-muted);}'
+    + '.ai-status{padding:6px 14px;font-size:11px;color:var(--text-muted);display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border-light);}'
+    + '.ai-access{display:flex;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border-light);}'
+    + '.ai-access input{flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text);font-size:11.5px;}'
+    + '.ai-access button{background:var(--accent);color:#fff;border:0;border-radius:4px;padding:6px 12px;font-size:11.5px;cursor:pointer;flex:none;}'
+    + '.ai-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none;}'
+    + '.ai-dot.on{background:#1c7a63;}.ai-dot.off{background:#A63D40;}'
+    + '.ai-quota{margin-left:auto;}'
+    + '.ai-clear{background:none;border:1px solid var(--border-light);border-radius:3px;color:var(--text-muted);font-size:10.5px;padding:3px 8px;cursor:pointer;}'
+    + '.ai-log{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;}'
+    + '.ai-msg{max-width:92%;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.45;white-space:pre-wrap;}'
+    + '.ai-msg.user{align-self:flex-end;background:var(--accent);color:#fff;}'
+    + '.ai-msg.bot{align-self:flex-start;background:var(--card-bg);border:1px solid var(--border-light);}'
+    + '.ai-msg.sys{align-self:center;color:var(--text-muted);font-size:11px;}'
+    + '.ai-chip{display:inline-block;margin:6px 6px 0 0;background:var(--card-bg);border:1px solid var(--accent);color:var(--accent);border-radius:14px;padding:4px 10px;font-size:11.5px;cursor:pointer;}'
+    + '.ai-chip:disabled{opacity:.5;cursor:default;border-color:var(--border);}'
+    + '.ai-disclose{margin:0;padding:8px 14px;font-size:10.5px;color:var(--text-muted);border-top:1px solid var(--border-light);}'
+    + '.ai-compose{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border-light);}'
+    + '.ai-compose input{flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text);font-size:12.5px;}'
+    + '.ai-send{background:var(--accent);color:#fff;border:0;border-radius:4px;padding:8px 14px;cursor:pointer;font-size:12.5px;}'
+    + '.ai-userbar{display:flex;gap:8px;align-items:center;padding:6px 14px;font-size:11px;color:var(--text-muted);border-top:1px solid var(--border-light);}'
+    + '.ai-userbar input{flex:1;padding:4px 6px;border:1px solid var(--border-light);border-radius:3px;background:var(--input-bg);color:var(--text);font-size:11px;}';
+  document.head.appendChild(st);
+  var btn = document.createElement('button');
+  btn.id = 'aiBtn'; btn.type = 'button';
+  btn.setAttribute('data-ai-exclude', '1');
+  var sp = document.createElement('span');
+  sp.setAttribute('data-i18n', 'aiBtn');
+  sp.textContent = 'Ask AI';
+  btn.textContent = '✦ ';
+  btn.appendChild(sp);
+  document.body.appendChild(btn);
+  var root = document.createElement('div');
+  root.id = 'ai-root';
+  root.setAttribute('data-ai-exclude', '1');
+  document.body.appendChild(root);
+  btn.addEventListener('click', function () { if (root.firstChild) aiClose(); else aiOpen(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && root.firstChild) aiClose();
+  });
+})();
 </script>
 </body>
 </html>`;
@@ -3326,19 +3673,20 @@ const combinedHtml = `<!doctype html>
 <div id="introOverlay" class="hidden">
   <div id="introModal">
     <h2>Welcome / 歡迎使用</h2>
-    <p class="intro-sub">MTC Performance Report — Interactive Web Version / 互動式網頁版</p>
-    <!-- Intro copy v2 (restyle stage, 2026-11-09): describes all 11 tabs -
-     the new 3D trade globe on the Dashboard and the new Domestic tab are the
-     two material additions since v1. The dismiss key below is bumped to
-     reportIntroDismissed_v2 alongside this text, per the versioning rule. -->
+    <p class="intro-sub">${reportTitle} — interactive web version of the official monthly pack, one offline file · report period ${reportPeriodRange} / 正式月報互動網頁版，單一離線檔案 · 報表期間 ${reportPeriodRange}</p>
+    <!-- Intro copy v3 (doc rewrite, 2026-11-10): full rewrite of the v2 restage
+     copy - adds what/when provenance (interpolated from the real build data
+     instead of hardcoded counts), the Ask AI panel (added but uncommitted at
+     v2 time), and explicit reading rules for the Domestic tab. Dismiss key
+     bumped to reportIntroDismissed_v3 alongside this text, per the rule. -->
     <ul>
-      <li><b>11 tabs / 十一個頁籤</b> — Dashboard, Data, Exchange Rate, five YoY comparisons, Customer-Quarter, <b>Domestic</b>, and Purchase: YTD by Vendor.<br>總覽、明細資料、匯率、五個「2026 對比 2025」年度比較頁、客戶季度毛利、<b>國內訂單</b>、採購：年度供應商排行。</li>
-      <li><b>Dashboard action title + 3D trade globe / 總覽結論標題與 3D 貿易地球</b> — a one-line conclusion computed live, above a full-width procedural earth: toggle Global Sales (destinations) / Global Purchase (origins); click a marker to jump to the Data tab pre-filtered.<br>總覽以即時計算的一行結論開頭，下方為全寬程序化 3D 地球：可切換全球銷售（目的地）／全球採購（原產國），點擊標記即跳至 Data 頁並自動篩選。</li>
-      <li><b>Domestic tab / 國內訂單頁</b> — 2026–2027 domestic orders and MTC commission (MJP · MCN · MZQ · MIN), one card per currency so no local amount is ever added across currencies; USD figures are clearly marked as derived memos.<br>2026–2027 國內訂單與 MTC 佣金（四實體），按貨幣分卡、絕不跨貨幣相加，USD 數字均為明確標示的推算備忘。</li>
-      <li><b>Live filters + sortable tables + CSV / 即時篩選、排序與匯出</b> — Year, Month, Customer, Vendor, Country filters update KPIs and charts together; "Export CSV" saves exactly the filtered view.<br>篩選同步更新 KPI 與圖表；「Export CSV」僅匯出目前篩選結果。</li>
-      <li><b>Consulting chrome / 報告式版面</b> — every exhibit is numbered, every tab closes with its sources, FX basis and report period; light/dark and EN/中文 toggles sit top-right.<br>圖表統一編號、每頁頁尾附資料來源、匯率基礎與報表期間；右上角可切換深淺色及中英文。</li>
+      <li><b>What this is / 內容</b> — ${sheetsData.length} tabs: Dashboard, Data (the full ${H.length}-column ledger), Exchange Rate, five YoY comparisons (2026 vs 2025, each with Total Index), Customer-Quarter, <b>Domestic</b>, and Purchase: YTD by Vendor.<br>${sheetsData.length} 個頁籤：總覽、明細（完整 ${H.length} 欄交易帳）、匯率、五個「2026 對比 2025」年度比較頁（各附總計指標）、客戶季度毛利、<b>國內訂單</b>、採購：年度供應商排行。</li>
+      <li><b>Dashboard / 總覽</b> — a one-line conclusion computed live from your filters, above the 3D trade globe: toggle Global Sales (destinations) ⇄ Global Purchase (origins), click a country marker to open the Data tab pre-filtered. The Geographic bar and Origin pie stay as the automatic fallback.<br>一行結論隨篩選即時計算；下方 3D 貿易地球可切換全球銷售（目的地）／全球採購（原產國），點擊國家標記即跳至明細並自動篩選；地理長條圖與原產國圓餅圖保留為自動備援。</li>
+      <li><b>Domestic tab / 國內訂單頁</b> — 2026–2027 domestic orders &amp; MTC commission (MJP · MCN · MZQ · MIN), per-currency cards: local amounts are never summed across currencies, and the derived-USD memos are <i>not</i> included in the MA/DI USD totals. As-of date shown on the tab.<br>按貨幣分卡，絕不跨貨幣相加；推算 USD 備忘<b>未</b>計入 MA/DI USD 總數；基準日見頁內標示。</li>
+      <li><b>Ask AI / 問 AI</b> — the "Ask AI" button (bottom-right) answers questions about the figures on screen and can propose filters you confirm before they apply. It sees filters and aggregates only — never transaction rows — and needs the office relay running; without it everything else works unchanged.<br>右下角「問 AI」可詢問頁面數字並建議可套用的篩選（須經你確認）；AI 僅見篩選與彙總值、絕不讀交易明細；需啟動辦公室本機轉接站，未啟動時其他功能不受影響。</li>
+      <li><b>How to work with it / 操作方式</b> — Year · Month · Customer · Vendor · Country filters update KPIs and charts together; "Export CSV" saves exactly the filtered view; EN/中文 and light/dark toggles sit top-right; exhibits are numbered and every tab closes with its sources, FX basis and period.<br>篩選同步更新 KPI 與圖表；「Export CSV」僅匯出目前篩選結果；右上角切換中英文與深淺色；圖表統一編號，每頁頁尾附資料來源、匯率基礎與報表期間。</li>
     </ul>
-    <p class="intro-note">This is the same data as the official Excel report — a convenience for browsing, not a replacement. / 資料與正式 Excel 報表一致，本頁僅為方便瀏覽之用，非取代 Excel 報表。</p>
+    <p class="intro-note">Same data as the official Excel pack — a convenience for browsing and presenting, not a replacement. / 資料與正式 Excel 報表一致，本頁僅為瀏覽與簡報便利之用，非取代 Excel 報表。</p>
     <div id="introFooter">
       <label><input type="checkbox" id="introDontShow"> Don't show this again / 下次不再顯示</label>
       <button id="introClose">Get Started / 開始使用</button>
@@ -3442,10 +3790,10 @@ var introCloseBtn = document.getElementById('introClose');
 // materially, so a returning viewer who dismissed an older version sees the
 // update once, instead of staying permanently hidden by a stale dismissal.
 var introDismissed = false;
-try { introDismissed = localStorage.getItem('reportIntroDismissed_v2') === '1'; } catch (e) {}
+try { introDismissed = localStorage.getItem('reportIntroDismissed_v3') === '1'; } catch (e) {}
 if (!introDismissed) introOverlay.classList.remove('hidden');
 introCloseBtn.onclick = function () {
-  if (introDontShow.checked) { try { localStorage.setItem('reportIntroDismissed_v2', '1'); } catch (e) {} }
+  if (introDontShow.checked) { try { localStorage.setItem('reportIntroDismissed_v3', '1'); } catch (e) {} }
   introOverlay.classList.add('hidden');
 };
 </script>
