@@ -13,8 +13,18 @@
   not via PasteSpecial's SkipBlanks (which doesn't marshal reliably over COM from
   PowerShell and silently pastes over everything instead of skipping blanks).
 
+  Before each FillDown, every non-seed column's template-row cell is checked to
+  confirm it's actually a formula (starts with "="). If a column that should be
+  formula-driven has silently lost its formula (e.g. from a manual paste-as-values
+  elsewhere), FillDown would otherwise just copy that frozen static value into
+  every new row forever without any warning - this is exactly what happened to
+  "MTC Sales Details" column N (Cust_Countries), which spent several months of
+  Combine runs stuck on one hardcoded country before being caught and fixed
+  manually. A short allowlist of columns already confirmed as legitimately
+  static/manual (2026-08 audit) is excluded from the warning to avoid noise.
+
   Usage:
-    powershell -ExecutionPolicy Bypass -File Combine-Into-Master.ps1 -MasterPath "...\Sales-Data-MTC-Mthly Rate.xlsx" -ImportPath "...\MTC_Import_Rows.xlsx" -OutputPath "...\Sales-Data-MTC-Mthly Rate - UPDATED.xlsx"
+    powershell -ExecutionPolicy Bypass -File PowerShell\Backup\Combine-Into-Master- BACKUP.ps1 -MasterPath "...\Sales-Data-MTC-Mthly Rate.xlsx" -ImportPath "...\MTC_Import_Rows.xlsx" -OutputPath "...\Sales-Data-MTC-Mthly Rate - UPDATED.xlsx"
 #>
 
 param(
@@ -32,6 +42,12 @@ $xlPasteValues = -4163
 $SALES_SEED_COLS = @(2,3,5,6,11,12,13,22,24,29,34,36,52,53,54,55,74,75,77,78,80,81,99,102,103)
 $NSP_SEED_COLS = @(2..35) + @(37)
 $POCOMM_SEED_COLS = @(1..35)
+
+# Non-seed columns already confirmed (2026-08 column audit) to be legitimately static/manual
+# entry fields, not formulas - excluded from the missing-formula warning below.
+$SALES_EXPECTED_STATIC = @(23,30,31,61,62,63,64)   # Part_desc1, no of pans, Ttl Pans, Dupont/Alum Rebate fields
+$NSP_EXPECTED_STATIC = @(36)                       # CHECK - confirmed always-static (0) since earliest rows, not a broken formula
+$POCOMM_EXPECTED_STATIC = @(36)                    # AJ (TTL COST USD) - already documented as needing manual entry
 
 if (-not (Test-Path $MasterPath)) { throw "Master file not found: $MasterPath" }
 if (-not (Test-Path $ImportPath)) { throw "Import file not found: $ImportPath" }
@@ -56,17 +72,36 @@ function Open-WB($path, $readOnly) {
   return $wb
 }
 
+# Checks that every non-seed, non-allowlisted column in the template row is still a
+# real formula before FillDown runs. A column that quietly lost its formula (e.g. a
+# one-off manual paste-as-values) would otherwise have that frozen static value
+# copied into every new row from then on with no indication anything is wrong.
+function Test-TemplateFormulas($mWs, $sheetName, $headerRow, $lastRow, $numCols, $seedCols, $expectedStaticCols) {
+  $warnings = @()
+  for ($col = 1; $col -le $numCols; $col++) {
+    if ($seedCols -contains $col) { continue }
+    if ($expectedStaticCols -contains $col) { continue }
+    $cell = $mWs.Cells($lastRow, $col)
+    $formula = "$($cell.Formula)"
+    if (-not $formula.StartsWith("=")) {
+      $header = "$($mWs.Cells($headerRow, $col).Value2)"
+      $warnings += "[$sheetName] Col $col ($header): template row $lastRow has no formula (value=[$($cell.Value2)]) - FillDown will copy this frozen value into every new row unchanged."
+    }
+  }
+  return $warnings
+}
+
 # Extends formulas from the template row down through the new rows, then overwrites
 # each seed column with the real per-row values copied from the import sheet.
 function Merge-AppendSheet($mWs, $impWs, $lastRow, $n, $numCols, $seedCols, $impFirstDataRow) {
   $fillRange = $mWs.Range($mWs.Cells($lastRow, 1), $mWs.Cells($lastRow + $n, $numCols))
-  $fillRange.FillDown()
+  $fillRange.FillDown() | Out-Null
 
   foreach ($col in $seedCols) {
     $srcRange = $impWs.Range($impWs.Cells($impFirstDataRow, $col), $impWs.Cells($impFirstDataRow + $n - 1, $col))
-    $srcRange.Copy()
+    $srcRange.Copy() | Out-Null
     $dstRange = $mWs.Range($mWs.Cells($lastRow + 1, $col), $mWs.Cells($lastRow + $n, $col))
-    $dstRange.PasteSpecial($xlPasteValues)
+    $dstRange.PasteSpecial($xlPasteValues) | Out-Null
   }
 }
 
@@ -78,6 +113,7 @@ try {
   foreach ($ws in $importWb.Worksheets) { $importSheetNames += $ws.Name }
 
   $log = @()
+  $warnings = @()
 
   # ---- MTC Sales Details: append rows A:CY (header row1, data from row2) ----
   if ($importSheetNames -contains "MTC Sales Details") {
@@ -87,6 +123,7 @@ try {
     if ($n -gt 0) {
       $mWs = $masterWb.Worksheets.Item("MTC Sales Details")
       $lastRow = $mWs.Cells($mWs.Rows.Count, 2).End($xlUp).Row
+      $warnings += Test-TemplateFormulas $mWs "MTC Sales Details" 1 $lastRow 103 $SALES_SEED_COLS $SALES_EXPECTED_STATIC
       Merge-AppendSheet $mWs $impWs $lastRow $n 103 $SALES_SEED_COLS 2
       $log += "MTC Sales Details: inserted $n rows ($($lastRow+1)-$($lastRow+$n))."
     }
@@ -126,6 +163,7 @@ try {
     if ($n -gt 0) {
       $mWs = $masterWb.Worksheets.Item("Net Selling Price")
       $lastRow = $mWs.Cells($mWs.Rows.Count, 2).End($xlUp).Row
+      $warnings += Test-TemplateFormulas $mWs "Net Selling Price" 2 $lastRow 44 $NSP_SEED_COLS $NSP_EXPECTED_STATIC
       Merge-AppendSheet $mWs $impWs $lastRow $n 44 $NSP_SEED_COLS 2
       $log += "Net Selling Price: inserted $n rows ($($lastRow+1)-$($lastRow+$n))."
     }
@@ -141,6 +179,7 @@ try {
     if ($n -gt 0) {
       $mWs = $masterWb.Worksheets.Item("PO comm")
       $lastRow = $mWs.Cells($mWs.Rows.Count, 6).End($xlUp).Row
+      $warnings += Test-TemplateFormulas $mWs "PO comm" 1 $lastRow 37 $POCOMM_SEED_COLS $POCOMM_EXPECTED_STATIC
       Merge-AppendSheet $mWs $impWs $lastRow $n 37 $POCOMM_SEED_COLS 2 # 37 cols so AK's Rate formula extends too
       $log += "PO comm: inserted $n rows ($($lastRow+1)-$($lastRow+$n)). AJ (TTL COST USD) still needs manual entry."
     }
@@ -155,6 +194,12 @@ try {
   Write-Output "----"
   Write-Output "Saved: $OutputPath"
   Write-Output "Original master file was not modified: $MasterPath"
+
+  if ($warnings.Count -gt 0) {
+    Write-Output "----"
+    Write-Output "*** WARNING: $($warnings.Count) column(s) lost their formula and were just FillDown-copied as static values - check these before trusting this month's data: ***"
+    $warnings | ForEach-Object { Write-Output "  $_" }
+  }
 }
 finally {
   if ($importWb) { $importWb.Close($false) }
