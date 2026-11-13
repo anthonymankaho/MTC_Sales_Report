@@ -23,7 +23,7 @@
 
   USAGE
     .\PowerShell\Convert-ACT001ToPurDetails.ps1 `
-      -WorkbookPath "C:\Users\User\Desktop\MTC Sales Report Claude\Sales-Data-MTC-Mthly Rate - UPDATED.xlsx" `
+      -WorkbookPath "C:\Users\User\Desktop\MTC Performance Report Claude\Sales-Data-MTC-Mthly Rate - UPDATED.xlsx" `
       -ACT001Sheet "ACT001_0926" `
       -ReportingMonth "2026-09"
 

@@ -24,9 +24,9 @@
 #>
 
 param(
-  [string]$IvrPath = "C:\Users\User\Desktop\MTC Sales Report Claude\IVR032.xlsx",
-  [string]$SalesCommPath = "C:\Users\User\Desktop\MTC Sales Report Claude\Sales & Commission Report-MTC.xlsx",
-  [string]$PurchaseCommPath = "C:\Users\User\Desktop\MTC Sales Report Claude\EPI_Purchase Commission Combined.xlsx"
+  [string]$IvrPath = "C:\Users\User\Desktop\MTC Performance Report Claude\IVR032.xlsx",
+  [string]$SalesCommPath = "C:\Users\User\Desktop\MTC Performance Report Claude\Sales & Commission Report-MTC.xlsx",
+  [string]$PurchaseCommPath = "C:\Users\User\Desktop\MTC Performance Report Claude\EPI_Purchase Commission Combined.xlsx"
 )
 
 $ErrorActionPreference = "Stop"

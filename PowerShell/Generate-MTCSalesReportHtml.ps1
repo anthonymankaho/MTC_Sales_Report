@@ -38,12 +38,12 @@
 
 .PARAMETER OutputPath
   Path for the generated HTML file. If omitted, defaults to the fixed working
-  file "FIN_MTC_Sales_Report_html_TEMP.html" in the project root - safe to
+  file "FIN_MTC_Performance_Report_html_TEMP.html" in the project root - safe to
   regenerate any number of times while iterating (see -Publish below).
 
 .PARAMETER Publish
   After building, also copies the result to the dated, period-stamped
-  snapshot "FIN_MTC_Sales_Report_html_<YYYYMM>.html" (YYYYMM from the source
+  snapshot "FIN_MTC_Performance_Report_html_<YYYYMM>.html" (YYYYMM from the source
   file's own reporting period). Only do this at the actual business
   checkpoint - not on every test run - per the incremental-report-file-
   chaining pattern: one continuously-overwritten TEMP working file, dated
@@ -108,9 +108,9 @@ $year = $Matches[2]
 $yyyymm = "{0}{1:D2}" -f $year, $endMonth
 
 if (-not $OutputPath) {
-  $OutputPath = Join-Path $projectDir "FIN_MTC_Sales_Report_html_TEMP.html"
+  $OutputPath = Join-Path $projectDir "FIN_MTC_Performance_Report_html_TEMP.html"
 }
-$publishedPath = Join-Path $projectDir "FIN_MTC_Sales_Report_html_$yyyymm.html"
+$publishedPath = Join-Path $projectDir "FIN_MTC_Performance_Report_html_$yyyymm.html"
 Write-Host "Output: $OutputPath"
 if ($Publish) { Write-Host "Will also publish to: $publishedPath" }
 

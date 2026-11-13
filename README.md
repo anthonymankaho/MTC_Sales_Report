@@ -1,4 +1,4 @@
-# MTC Sales Report Claude — MTC Performance Report tooling
+# MTC Performance Report Claude
 
 Tooling for the monthly MTC sales/commission report cycle. It replaces the manual
 data-entry portion of the process — logging into MMS/EPICOR and downloading the source
@@ -31,7 +31,7 @@ optionally building the interactive **MTC Performance Report** HTML for distribu
 5. **Merge into the master** with [PowerShell/Combine-Into-Master.ps1](PowerShell/Combine-Into-Master.ps1):
 
    ```powershell
-   cd "C:\Users\User\Desktop\MTC Sales Report Claude"
+   cd "C:\Users\User\Desktop\MTC Performance Report Claude"
    powershell -ExecutionPolicy Bypass -File PowerShell\Combine-Into-Master.ps1 `
      -MasterPath "Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx" `
      -ImportPath "MTC_Import_Rows.xlsx" `
@@ -76,7 +76,8 @@ the project root, reads it read-only via Excel COM, reads the Domestic Orders wo
 (via the `Domestic Orders*.xlsx` wildcard — its name contains em/en dashes) and the
 monthly FX `.xls`, stages **eleven JSON data islands** under `HTML_Report_Generator\_work`
 (plus `family_category_map.json`), then runs `HTML_Report_Generator/build_report.js` to
-assemble `FIN_MTC_Performance_Report_html_TEMP.html` in the project root. Pass `-KeepWork`
+assemble `FIN_MTC_Performance_Report_html_TEMP.html` in the project root. The default
+output path of the generator matches this filename. Pass `-KeepWork`
 to keep the islands for inspection.
 
 The report has **eleven tabs**: Dashboard (KPIs + charts, NET/NET NET toggle), Data (the
@@ -90,15 +91,16 @@ automatic WebGL fallback). Every tab supports English/繁中 and light/dark togg
 exhibit is numbered with source footnotes. The whole thing is one self-contained file
 (keep under the 11 MB email budget).
 
-A **Qwen AI assistant panel** ("Ask AI", bottom-right) is built into the report via the
-shared local relay at `127.0.0.1:8765` (the same loopback service as the MPL and GPR
-tools): it sends only current filters and aggregate figures, never transaction rows or
-credentials, can propose filters you confirm with Apply, and the file itself carries no
-key. Recipients who don't run the relay simply see "Relay offline" — everything else
-works from `file://` with no network at all.
+A **Qwen AI assistant panel** ("Ask AI", bottom-right) is built into the report and uses
+the hosted Cloudflare AI service by default; no access code is needed. It sends only
+current filters and aggregate figures, never transaction rows or credentials, and can
+propose filters you confirm with Apply. If Cloudflare is unreachable, it tries the local
+office relay at `127.0.0.1:8765`; if both are unavailable, the rest of the report still
+works from `file://` with no network.
 
-## Current progress (2026-11-10)
+## Current progress (2026-11-11)
 
+- 2026-11-11: Desktop folder renamed from `MTC Sales Report Claude` to `MTC Performance Report Claude`, matching the combined MTC Performance Report. The GitHub repository name stays `MTC_Sales_Report`. Sheet names, source file names, and script names are unchanged.
 - Docs consolidated (2026-11-10): README and the report's welcome intro (now v3) were
   rewritten to match the 11-tab MTC Performance Report; the legacy SOP docx was retired —
   the written procedure is now this README + `DOMESTIC-AND-GLOBE-SOP-appendix.md` +
@@ -171,8 +173,7 @@ works from `file://` with no network at all.
   weekly project rolls to a new month changes that figure. For visual/copy-only changes,
   rebuild from the surviving islands instead:
   `node HTML_Report_Generator\build_report.js HTML_Report_Generator\_work <output.html>`.
-- The GitHub default branch is still the old `main`; the live branch is **`MTC`**
-  (`origin/MTC`). The `backup` remote (AnthonyManhk) cannot be pushed from this machine.
+- GitHub for the MTC Performance Report is https://github.com/anthonymankaho/MTC_Sales_Report (`origin`). The repository name stays `MTC_Sales_Report`. The default branch is `MTC`. The `backup` remote (AnthonyManhk) cannot be pushed from this machine.
 - This repo is **private** and contains real sales, commission, and margin data — keep it
   that way.
 - The large `Sales-Data-MTC-Mthly Rate*.xlsx` files are tracked as-is (no Git LFS); the

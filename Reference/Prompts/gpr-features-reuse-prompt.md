@@ -14,7 +14,7 @@ reference implementation:
 (and `Generate-PurchaseReportHtml.ps1` for the TEMP/`-Publish` snapshot
 convention it uses). Bring the following features to **[TARGET REPORT NAME]**:
 
-- MTC Sales Report → `C:\Users\User\Desktop\MTC Sales Report Claude\HTML_Report_Generator\build_report.js`
+- MTC Performance Report → `C:\Users\User\Desktop\MTC Performance Report Claude\HTML_Report_Generator\build_report.js`
   already exists and already has its own on-chart data labels, a NET/NET NET
   basis toggle, cross-tab drill-down, and an English/Traditional Chinese
   language toggle (see the older reuse-prompt at

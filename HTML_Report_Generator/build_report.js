@@ -207,7 +207,7 @@ var I18N = {
     globeAllMarkets: 'All markets', globeLegendTitle: 'Geographic performance - click a row to drill in',
     globeSizeLegend: 'marker size scales with value',
     globeUnlocatedNote: 'No hub coordinate - no marker, but still counted in every figure:',
-    aiBtn: 'Ask AI', aiTitle: 'AI assistant (Qwen)', aiHello: 'Hi - ask about the numbers on this dashboard (totals, YoY, countries, domestic memo). I can suggest filters to apply too.', aiPh: 'e.g. Which month had the lowest sales?', aiSend: 'Send', aiApply: 'Apply', aiOffline: 'Relay offline - start the local Qwen relay (start-proxy) to enable AI. Everything else works normally.', aiOnline: 'Connected', aiClear: 'Clear', aiThinking: 'Thinking...', aiTrunc: '(answer truncated)', aiErrNet: 'No reply from the local relay - is it running?', aiQuota: 'quota {U} / {C} tokens this month', aiName: 'Name:', aiCodePh: 'MTC company AI access code (page session only - leave empty for the local relay)', aiConnect: 'Connect', aiDisclose: 'Sent to the AI service (Cloudflare when a company access code is connected, otherwise the local office relay): current filters and the aggregate figures on this page (KPIs, monthly, country top lists). Never sent: transaction rows or credentials. The access code stays in this page session only.',
+    aiBtn: 'Ask AI', aiTitle: 'AI assistant (Qwen)', aiHello: 'Hi - ask about the numbers on this dashboard (totals, YoY, countries, domestic memo). I can suggest filters to apply too.', aiPh: 'e.g. Which month had the lowest sales?', aiSend: 'Send', aiApply: 'Apply', aiOffline: 'AI service offline - check the internet connection, then close and reopen the assistant. Everything else works normally.', aiOnline: 'Connected', aiClear: 'Clear', aiThinking: 'Thinking...', aiTrunc: '(answer truncated)', aiErrNet: 'No reply from the AI service - check your connection and send again.', aiQuota: 'quota {U} / {C} tokens this month', aiName: 'Name:', aiDisclose: 'Sent to the AI service (Cloudflare; falls back to the local office relay only when Cloudflare is unreachable): current filters and the aggregate figures on this page (KPIs, monthly, country top lists). Never sent: transaction rows or credentials. No access code is needed - the monthly token quota is the limit.',
     otherCategory: 'Others',
     totalIndexHeading: 'Total Index',
     weightedLabel: 'weighted',
@@ -271,7 +271,7 @@ ${ACTION_EN_JS}
     globeAllMarkets: '全部市場', globeLegendTitle: '地區績效排行 — 點列可鑽入篩選',
     globeSizeLegend: '標記大小依金額縮放',
     globeUnlocatedNote: '無標示座標 — 不畫標記，但所有數字仍照常計入：',
-    aiBtn: '問 AI', aiTitle: 'AI 助理(Qwen)', aiHello: '你好 — 可以問我這份 Dashboard 上的數字(合計、同比、國家、國內附註),我也會建議可直接套用的篩選。', aiPh: '例如:哪個月銷售最低?', aiSend: '送出', aiApply: '套用', aiOffline: '本機 relay 未啟動 — 執行 start-proxy 後即可使用 AI,其餘功能不受影響。', aiOnline: '已連線', aiClear: '清除', aiThinking: '思考中…', aiTrunc: '(回覆被截斷)', aiErrNet: '本機 relay 沒有回應 — 是否已啟動?', aiQuota: '本月用量 {U} / {C} tokens', aiName: '名稱:', aiCodePh: 'MTC 公司 AI 存取碼(僅限本頁面工作階段;留空則使用本機轉接站)', aiConnect: '連線', aiDisclose: '送給 AI 服務的內容(已連線公司存取碼時經 Cloudflare 雲端助理,否則經辦公室本機轉接站):目前篩選與頁面彙總數字(KPI、月度、國家前榜)。絕不送出:交易明細或任何憑證;存取碼只保留於本頁面工作階段。',
+    aiBtn: '問 AI', aiTitle: 'AI 助理(Qwen)', aiHello: '你好 — 可以問我這份 Dashboard 上的數字(合計、同比、國家、國內附註),我也會建議可直接套用的篩選。', aiPh: '例如:哪個月銷售最低?', aiSend: '送出', aiApply: '套用', aiOffline: 'AI 服務離線 — 請檢查網絡連線,然後關閉再打開助理。其餘功能不受影響。', aiOnline: '已連線', aiClear: '清除', aiThinking: '思考中…', aiTrunc: '(回覆被截斷)', aiErrNet: 'AI 服務沒有回應 — 請檢查連線後再送出。', aiQuota: '本月用量 {U} / {C} tokens', aiName: '名稱:', aiDisclose: '送給 AI 服務的內容(經 Cloudflare 雲端助理;只有喺 Cloudflare 無法連線時先至改用辦公室本機轉接站):目前篩選與頁面彙總數字(KPI、月度、國家前榜)。絕不送出:交易明細或任何憑證。毋須存取碼——每月 token 配額就係上限。',
     otherCategory: '其他',
     totalIndexHeading: '總計指標',
     weightedLabel: '加權',
@@ -2615,43 +2615,53 @@ window.globeUpdateHook = globePaint;
   }
 })();
 
-/* ---- AI assistant panel (Qwen; dual endpoint, GPR-style) ----
-   Default: the SHARED loopback relay at 127.0.0.1:8765 (same machine).
-   If an MTC company AI access code is entered + Connect: the hosted
-   meyer-ai-assistant Cloudflare Worker (/mtc/chat, /mtc/health) - the same
-   pattern as the EIC/GPL panels, so emailed copies work for colleagues
-   without any local install. This file carries NO credential; the worker and
-   relay hold the bearer server-side, enforce the monthly cap, and fail
-   closed. If neither endpoint answers, the panel shows a friendly offline
-   line and the dashboard is untouched. Model text is always rendered with
-   textContent; chat history and the access code live in memory only (page
-   session); the panel nodes are tagged data-ai-exclude for save-copy hygiene. */
+/* ---- AI assistant panel (Qwen; hosted-first, GPR-style) ----
+   Default: the hosted meyer-ai-assistant Cloudflare Worker (/mtc/chat,
+   /mtc/health) - no access code needed since 2026-11-12 (Anthony's decision,
+   auditor/team convenience); the per-app 5M monthly token quota is the guard.
+   Emailed copies work for colleagues without any local install. If the hosted
+   service is unreachable, the panel automatically falls back to the legacy
+   loopback relay at 127.0.0.1:8765 when it happens to run on this PC. This
+   file carries NO credential; the worker and relay hold the bearer
+   server-side, enforce the monthly cap, and fail closed. If neither endpoint
+   answers, the panel shows a friendly offline line and the dashboard is
+   untouched. Model text is always rendered with textContent; chat history
+   lives in memory only (page session); the panel nodes are tagged
+   data-ai-exclude for save-copy hygiene. */
 var AI_RELAY = 'http://127.0.0.1:8765';
 var AI_HOSTED = 'https://meyer-ai-assistant.anthonym-354.workers.dev/mtc';
 var DOM_MEMO = ${domMemo ? JSON.stringify(domMemo) : 'null'};
-var aiState = { history: [], busy: false, online: null, mode: 'relay', code: '', lastError: '' };
+var aiState = { history: [], busy: false, online: null, mode: 'hosted', lastError: '' };
 var aiUser = 'MTC-report';
 try { aiUser = localStorage.getItem('mtc-ai-user') || 'MTC-report'; } catch (e) { /* srcdoc storage may be unavailable */ }
 
 function aiUsd(v) { return Math.round(v).toLocaleString('en-US'); }
 function aiProbe() {
-  var ctl = new AbortController();
-  setTimeout(function () { ctl.abort(); }, 8000);
-  if (aiState.code) {
-    aiState.mode = 'hosted';
-    return fetch(AI_HOSTED + '/health', { headers: { 'x-meyer-ai-code': aiState.code }, signal: ctl.signal })
+  aiState.mode = 'hosted';
+  aiState.lastError = '';
+  function hostedOnce() {
+    return fetch(AI_HOSTED + '/health', { signal: (function () { var c = new AbortController(); setTimeout(function () { c.abort(); }, 8000); return c.signal; })() })
       .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }, function () { return { ok: false, b: null }; }); })
       .then(function (res) {
-        aiState.online = res.ok && res.b && res.b.ok === true;
-        aiState.lastError = aiState.online ? '' : ((res.b && res.b.error) || 'Cloudflare AI service unavailable. Check the company access code and internet connection.');
-        return aiState.online;
+        if (res.ok && res.b && res.b.ok === true) { aiState.online = true; aiState.lastError = ''; return true; }
+        aiState.lastError = (res.b && res.b.error) || 'Cloudflare AI service unavailable. Check the internet connection.';
+        return false;
       })
-      .catch(function () { aiState.online = false; aiState.lastError = 'Cannot reach the Cloudflare AI service. Check the access code and internet connection.'; return false; });
+      .catch(function () { aiState.lastError = 'Cannot reach Cloudflare right now - your network path timed out. Close and reopen the assistant to try again.'; return false; });
   }
-  aiState.mode = 'relay';
-  aiState.lastError = '';
-  return fetch(AI_RELAY + '/health', { signal: ctl.signal }).then(function (r) { aiState.online = r.ok; return r.ok; })
-    .catch(function () { aiState.online = false; return false; });
+  return hostedOnce().then(function (ok) {
+    if (ok) return true;
+    // One automatic retry: brief network-path glitches (DNS/QUIC/route hiccups)
+    // otherwise surface as a misleading "check your connection" failure.
+    return hostedOnce().then(function (ok2) {
+      if (ok2) return true;
+      // Last resort: the legacy loopback relay, if it runs on this PC.
+      aiState.mode = 'relay';
+      return fetch(AI_RELAY + '/health', { signal: (function () { var c = new AbortController(); setTimeout(function () { c.abort(); }, 5000); return c.signal; })() })
+        .then(function (r) { aiState.online = r.ok; if (r.ok) aiState.lastError = ''; return r.ok; })
+        .catch(function () { aiState.online = false; aiState.mode = 'hosted'; return false; });
+    });
+  });
 }
 function aiContext() {
   var rows = lastRows;
@@ -2769,7 +2779,6 @@ function aiSend(message) {
   setTimeout(function () { ctl.abort(); }, 90000);
   var aiBase = aiState.mode === 'hosted' ? AI_HOSTED : AI_RELAY;
   var aiHeaders = { 'content-type': 'application/json' };
-  if (aiState.mode === 'hosted') aiHeaders['x-meyer-ai-code'] = aiState.code;
   fetch(aiBase + '/chat', {
     method: 'POST', headers: aiHeaders, signal: ctl.signal,
     body: JSON.stringify({ username: aiUser, message: message, history: aiState.history.slice(-12), context: aiContext() })
@@ -2792,7 +2801,7 @@ function aiSend(message) {
     }
   }).catch(function () {
     thinking.remove();
-    logEl.appendChild(aiBubble('sys', '⚠ ' + t('aiErrNet'), null));
+    logEl.appendChild(aiBubble('sys', '⚠ ' + (aiState.mode === 'hosted' ? 'Cannot reach Cloudflare right now - your message was NOT sent. Check your connection and send again.' : t('aiErrNet')), null));
     aiProbe().then(function (ok) { if (!ok) aiStatusHtml(); });
   }).then(function () {
     aiState.busy = false;
@@ -2859,7 +2868,6 @@ function aiOpen() {
   root.innerHTML = '<aside class="ai-win" role="dialog" aria-labelledby="ai-title">'
     + '<header class="ai-head" title="Drag to move / 拖曳移動"><span class="ai-grip">⠿</span><h3 id="ai-title">' + t('aiTitle') + '</h3><button type="button" class="ai-x" id="ai-close" aria-label="close">✕</button></header>'
     + '<div class="ai-status" id="ai-status"></div>'
-    + '<div class="ai-access"><input id="ai-code" type="password" autocomplete="new-password" maxlength="100"/><button type="button" id="ai-connect"></button></div>'
     + '<div class="ai-log" id="ai-log"></div>'
     + '<p class="ai-disclose">' + t('aiDisclose') + '</p>'
     + '<form class="ai-compose" id="ai-form"><input id="ai-input" type="text" maxlength="4000"/><button class="ai-send" id="ai-send" type="submit"></button></form>'
@@ -2873,20 +2881,6 @@ function aiOpen() {
   document.getElementById('ai-log').appendChild(aiBubble('sys', t('aiHello'), null));
   document.getElementById('ai-close').addEventListener('click', aiClose);
   aiMakeDraggable(root.querySelector('.ai-win'));
-  var codeIn = document.getElementById('ai-code'), connBtn = document.getElementById('ai-connect');
-  codeIn.placeholder = t('aiCodePh'); connBtn.textContent = t('aiConnect');
-  codeIn.value = aiState.code;
-  connBtn.addEventListener('click', function () {
-    aiState.code = codeIn.value.trim();
-    aiProbe().then(function () {
-      aiStatusHtml();
-      if (aiState.online) { var ii = document.getElementById('ai-input'); if (ii) ii.focus(); }
-      else if (aiState.mode === 'hosted') {
-        var lg = document.getElementById('ai-log');
-        if (lg) { lg.appendChild(aiBubble('sys', '⚠ ' + (aiState.lastError || 'Cloudflare connection failed.'), null)); lg.scrollTop = lg.scrollHeight; }
-      }
-    });
-  });
   document.getElementById('ai-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var v = document.getElementById('ai-input').value.trim();
@@ -3683,7 +3677,7 @@ const combinedHtml = `<!doctype html>
       <li><b>What this is / 內容</b> — ${sheetsData.length} tabs: Dashboard, Data (the full ${H.length}-column ledger), Exchange Rate, five YoY comparisons (2026 vs 2025, each with Total Index), Customer-Quarter, <b>Domestic</b>, and Purchase: YTD by Vendor.<br>${sheetsData.length} 個頁籤：總覽、明細（完整 ${H.length} 欄交易帳）、匯率、五個「2026 對比 2025」年度比較頁（各附總計指標）、客戶季度毛利、<b>國內訂單</b>、採購：年度供應商排行。</li>
       <li><b>Dashboard / 總覽</b> — a one-line conclusion computed live from your filters, above the 3D trade globe: toggle Global Sales (destinations) ⇄ Global Purchase (origins), click a country marker to open the Data tab pre-filtered. The Geographic bar and Origin pie stay as the automatic fallback.<br>一行結論隨篩選即時計算；下方 3D 貿易地球可切換全球銷售（目的地）／全球採購（原產國），點擊國家標記即跳至明細並自動篩選；地理長條圖與原產國圓餅圖保留為自動備援。</li>
       <li><b>Domestic tab / 國內訂單頁</b> — 2026–2027 domestic orders &amp; MTC commission (MJP · MCN · MZQ · MIN), per-currency cards: local amounts are never summed across currencies, and the derived-USD memos are <i>not</i> included in the MA/DI USD totals. As-of date shown on the tab.<br>按貨幣分卡，絕不跨貨幣相加；推算 USD 備忘<b>未</b>計入 MA/DI USD 總數；基準日見頁內標示。</li>
-      <li><b>Ask AI / 問 AI</b> — the "Ask AI" button (bottom-right) answers questions about the figures on screen and can propose filters you confirm before they apply. It sees filters and aggregates only — never transaction rows — and needs the office relay running; without it everything else works unchanged.<br>右下角「問 AI」可詢問頁面數字並建議可套用的篩選（須經你確認）；AI 僅見篩選與彙總值、絕不讀交易明細；需啟動辦公室本機轉接站，未啟動時其他功能不受影響。</li>
+      <li><b>Ask AI / 問 AI</b> — the "Ask AI" button (bottom-right) answers questions about the figures on screen and can propose filters you confirm before they apply. It sees filters and aggregates only — never transaction rows — and works out of the box via the cloud AI service (no access code needed); if the service is unreachable, everything else works unchanged.<br>右下角「問 AI」可詢問頁面數字並建議可套用的篩選（須經你確認）；AI 僅見篩選與彙總值、絕不讀交易明細；經雲端 AI 服務即時可用（毋須存取碼），服務無法連線時其他功能不受影響。</li>
       <li><b>How to work with it / 操作方式</b> — Year · Month · Customer · Vendor · Country filters update KPIs and charts together; "Export CSV" saves exactly the filtered view; EN/中文 and light/dark toggles sit top-right; exhibits are numbered and every tab closes with its sources, FX basis and period.<br>篩選同步更新 KPI 與圖表；「Export CSV」僅匯出目前篩選結果；右上角切換中英文與深淺色；圖表統一編號，每頁頁尾附資料來源、匯率基礎與報表期間。</li>
     </ul>
     <p class="intro-note">Same data as the official Excel pack — a convenience for browsing and presenting, not a replacement. / 資料與正式 Excel 報表一致，本頁僅為瀏覽與簡報便利之用，非取代 Excel 報表。</p>

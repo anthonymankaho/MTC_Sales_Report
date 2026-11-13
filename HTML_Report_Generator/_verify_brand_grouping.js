@@ -4,7 +4,7 @@ const path = require('path');
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
-  const filePath = 'file:///' + path.resolve('C:/Users/User/Desktop/MTC Sales Report Claude/FIN_MTC_Sales_Report_html_TEMP.html').replace(/\\/g, '/');
+  const filePath = 'file:///' + path.resolve('C:/Users/User/Desktop/MTC Performance Report Claude/FIN_MTC_Performance_Report_html_TEMP.html').replace(/\\/g, '/');
   await page.goto(filePath);
   await page.waitForTimeout(500);
   const overlay = await page.$('#introOverlay');
