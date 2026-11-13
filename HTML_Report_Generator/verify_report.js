@@ -19,6 +19,7 @@ const fileUrl = /^https?:\/\//i.test(filePath) ? filePath : 'file:///' + path.re
   page.on('console', (msg) => { if (msg.type() === 'error') errors.push('CONSOLE ERROR: ' + msg.text()); });
 
   await page.goto(fileUrl, { waitUntil: 'load', timeout: 60000 });
+  await page.waitForSelector('#accessGate', { state: 'attached', timeout: 60000 });
   await page.waitForTimeout(500);
 
   // Access gate: reject a wrong code, then accept the configured MTC code.
@@ -27,6 +28,7 @@ const fileUrl = /^https?:\/\//i.test(filePath) ? filePath : 'file:///' + path.re
     const initiallyVisible = await accessGate.isVisible();
     await page.locator('#accessCode').fill('WRONG');
     await page.locator('#accessSubmit').click();
+    await page.waitForTimeout(150);
     const errorText = await page.locator('#accessError').textContent();
     const stillVisibleAfterWrong = await accessGate.isVisible();
     await page.locator('#accessCode').fill('MTC');
@@ -107,9 +109,11 @@ const fileUrl = /^https?:\/\//i.test(filePath) ? filePath : 'file:///' + path.re
   // Logout clears the session-only gate and returns the viewer to login.
   const logoutBtn = page.locator('#accessLogout');
   if (await logoutBtn.count()) {
-    await logoutBtn.click();
-    await page.waitForLoadState('load');
-    await page.waitForTimeout(150);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'load', timeout: 60000 }),
+      logoutBtn.click()
+    ]);
+    await page.waitForSelector('#accessGate', { state: 'visible', timeout: 60000 });
     console.log('Logout test: gateVisible=' + await page.locator('#accessGate').isVisible());
   }
 
