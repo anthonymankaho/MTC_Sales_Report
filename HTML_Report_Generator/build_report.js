@@ -41,6 +41,72 @@ function resolveColumnIndex(candidates) {
 }
 console.log('Data loaded:', dataSheet.rows.length, 'rows,', H.length, 'cols');
 
+// Canonical unfiltered totals for every YoY Total Index.  The DATA ledger is
+// the source of truth: the Excel PivotTables carry the same raw Grand Total,
+// but their visible row cells are rounded for display.  Summing those rounded
+// strings in the browser produces a different residual for each grouping
+// (Customers, Fabrication, Product Family and Part ID).  Keep the exact DATA
+// values here and map them to each page's metric-pair labels below.
+const canonicalYearIdx = resolveColumnIndex(['Year']);
+const canonicalQtyIdx = resolveColumnIndex(['SKU_qty']);
+const canonicalSalesIdx = resolveColumnIndex(['Net_Sales_USD']);
+const canonicalCostIdx = resolveColumnIndex(['Ttl PO USD', 'Matl_USD']);
+const canonicalNetNetSalesIdx = resolveColumnIndex(['Total Net Net Sales (USD)']);
+const canonicalNetNetMarginIdx = resolveColumnIndex(['Total Net Net Margin (USD)']);
+const canonicalDataTotals = {};
+function ensureCanonicalYear(year) {
+  if (!canonicalDataTotals[year]) {
+    canonicalDataTotals[year] = {
+      SKU_qty: 0,
+      Net_Sales_USD: 0,
+      TTL_PO_USD: 0,
+      Total_PO_Net_Margin_USD: 0,
+      Total_Net_Net_Sales_USD: 0,
+      Total_Net_Net_Margin_USD: 0
+    };
+  }
+  return canonicalDataTotals[year];
+}
+function numericLedgerValue(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+dataSheet.rows.forEach(row => {
+  const year = String(row[canonicalYearIdx] == null ? '' : row[canonicalYearIdx]).trim();
+  if (!/^20\d{2}$/.test(year)) return;
+  const totals = ensureCanonicalYear(year);
+  const qty = canonicalQtyIdx >= 0 ? numericLedgerValue(row[canonicalQtyIdx]) : 0;
+  const sales = canonicalSalesIdx >= 0 ? numericLedgerValue(row[canonicalSalesIdx]) : 0;
+  const cost = canonicalCostIdx >= 0 ? numericLedgerValue(row[canonicalCostIdx]) : 0;
+  totals.SKU_qty += qty;
+  totals.Net_Sales_USD += sales;
+  totals.TTL_PO_USD += cost;
+  totals.Total_PO_Net_Margin_USD += sales - cost;
+  if (canonicalNetNetSalesIdx >= 0) totals.Total_Net_Net_Sales_USD += numericLedgerValue(row[canonicalNetNetSalesIdx]);
+  if (canonicalNetNetMarginIdx >= 0) totals.Total_Net_Net_Margin_USD += numericLedgerValue(row[canonicalNetNetMarginIdx]);
+});
+function canonicalTotalsForHeader(header) {
+  const result = {};
+  header.forEach(h => {
+    const match = /^(.*)\s(20\d{2})$/.exec(String(h));
+    if (!match) return;
+    const base = match[1];
+    const lower = base.toLowerCase();
+    let kind = null;
+    if (/^sku_qty\b/i.test(base)) kind = 'SKU_qty';
+    else if (/net_sales_usd/i.test(lower) && !/total\s+net\s+net/i.test(lower)) kind = 'Net_Sales_USD';
+    else if (/ttl\s+po\s+usd/i.test(lower)) kind = 'TTL_PO_USD';
+    else if (/total\s+po\s+net\s+margin\s+usd/i.test(lower)) kind = 'Total_PO_Net_Margin_USD';
+    else if (/total\s+net\s+net\s+sales/i.test(lower)) kind = 'Total_Net_Net_Sales_USD';
+    else if (/total\s+net\s+net\s+margin/i.test(lower)) kind = 'Total_Net_Net_Margin_USD';
+    if (!kind || result[base]) return;
+    result[base] = {};
+    Object.keys(canonicalDataTotals).forEach(year => { result[base][year] = canonicalDataTotals[year][kind]; });
+  });
+  return result;
+}
+console.log('Canonical 2026 DATA totals:', JSON.stringify(canonicalDataTotals['2026'] || {}));
+
 // ---- vendor assets ----
 const jqueryJs = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'jquery.min.js'), 'utf8');
 const dataTablesJs = fs.readFileSync(path.join(SCRIPT_DIR, 'vendor', 'dataTables.min.js'), 'utf8');
@@ -625,7 +691,7 @@ const INTRO_EN = {
 // footnote - island filename + report period + FX as-of text. Language-
 // neutral data (filenames/dates), so it is emitted verbatim under a
 // translated "Sources" label leaf in both modes; it never carries a {token}.
-function buildDataTablesHtml(header, rows, title, scrollX, filterColumns, drilldown, titleKey, kpiPie, introKey, yoyRankCol, defaultSortCol, groupBy, actionKey, sourceNote) {
+function buildDataTablesHtml(header, rows, title, scrollX, filterColumns, drilldown, titleKey, kpiPie, introKey, yoyRankCol, defaultSortCol, groupBy, actionKey, sourceNote, canonicalTotals) {
   if (scrollX === undefined) scrollX = true;
   if (!filterColumns) filterColumns = [];
   const defaultSortColIdx = defaultSortCol ? header.indexOf(defaultSortCol) : -1;
@@ -635,6 +701,8 @@ function buildDataTablesHtml(header, rows, title, scrollX, filterColumns, drilld
   const filterColIdx = filterColumns.map(name => header.indexOf(name)).filter(i => i >= 0);
   const filterColIdxJsonStr = JSON.stringify(filterColIdx);
   const groupByJsonStr = groupBy ? JSON.stringify(groupBy) : 'null';
+  const resolvedCanonicalTotals = canonicalTotals || (kpiPie ? canonicalTotalsForHeader(header) : null);
+  const canonicalTotalsJsonStr = resolvedCanonicalTotals ? neutralize(JSON.stringify(resolvedCanonicalTotals)) : 'null';
   // drilldown (optional): { labelColCount, dataColMap: {thisTableColName: DataTabColName} }
   // Every metric column past labelColCount becomes a clickable link - clicking
   // it switches to the Data tab filtered to exactly the transactions behind
@@ -742,6 +810,7 @@ var DRILLDOWN = ${drilldownJsonStr};
 var KPI_PIE = ${kpiPie ? 'true' : 'false'};
 var YOY_RANK_COL = ${yoyRankCol ? 'true' : 'false'};
 var GROUP_BY = ${groupByJsonStr};
+var CANONICAL_TOTALS = ${canonicalTotalsJsonStr};
 // Which brand/group names are currently expanded (Family1 children shown
 // instead of the collapsed group-total row) - empty means every group starts
 // collapsed, so the table opens on the rolled-up Brand view.
@@ -757,7 +826,14 @@ function isGroupTotalRow(rowData) { return GROUP_BY && rowData[GROUP_BY.detailKe
 // rows, collapsed or not, rather than just whichever brand is on screen.
 var bypassGroupVisibility = false;
 function getRowsForTotalIndex(api) {
-  if (!GROUP_BY) return api.rows({ search: 'applied' }).data().toArray();
+  function markFullDataset(rows) {
+    var hasGlobalSearch = String(api.search() || '') !== '';
+    var columnSearches = api.columns().search().toArray();
+    var hasColumnSearch = columnSearches.some(function (s) { return String(s || '') !== ''; });
+    rows.__isFullDataset = !hasGlobalSearch && !hasColumnSearch;
+    return rows;
+  }
+  if (!GROUP_BY) return markFullDataset(api.rows({ search: 'applied' }).data().toArray());
   // rows({search:'applied'}) reads the filtered-row cache built by the last
   // real .draw() - just flipping the bypass flag here does nothing until a
   // draw actually re-runs the search predicates under it. Both draws stay
@@ -769,7 +845,7 @@ function getRowsForTotalIndex(api) {
   var rows = api.rows({ search: 'applied' }).data().toArray().filter(function (r) { return !isGroupTotalRow(r); });
   bypassGroupVisibility = false;
   api.draw(false);
-  return rows;
+  return markFullDataset(rows);
 }
 function applyTheme(theme) { document.body.setAttribute('data-theme', theme); }
 // Titles/headers/buttons only - column headers and every cell value are the
@@ -996,6 +1072,7 @@ var totalIndexPairs = null; // computed once (structure never changes) - only th
 // whatever the user has filtered the table to, not just the table body.
 function renderTotalIndex(rowsForCalc) {
   if (!KPI_PIE) return;
+  var useCanonicalTotals = !rowsForCalc || rowsForCalc === ROWS || rowsForCalc.__isFullDataset === true;
   rowsForCalc = rowsForCalc || ROWS;
   // A group-total row (e.g. a Brand's rolled-up totals) duplicates the sum of
   // its own Family1 rows - summing both whenever a group happens to be
@@ -1026,10 +1103,16 @@ function renderTotalIndex(rowsForCalc) {
   row2026.innerHTML = ''; row2025.innerHTML = ''; // clear the previous filter state's cards before rebuilding
   pairs.forEach(function (p) {
     var sum2025 = 0, sum2026 = 0;
-    rowsForCalc.forEach(function (r) {
-      sum2025 += parseFormattedNumber(r[p.cols['2025']]);
-      sum2026 += parseFormattedNumber(r[p.cols['2026']]);
-    });
+    var canonical = useCanonicalTotals ? CANONICAL_TOTALS[p.base] : null;
+    if (canonical && canonical['2025'] !== undefined && canonical['2026'] !== undefined) {
+      sum2025 = Number(canonical['2025']) || 0;
+      sum2026 = Number(canonical['2026']) || 0;
+    } else {
+      rowsForCalc.forEach(function (r) {
+        sum2025 += parseFormattedNumber(r[p.cols['2025']]);
+        sum2026 += parseFormattedNumber(r[p.cols['2026']]);
+      });
+    }
 
     var kpi2026 = document.createElement('div'); kpi2026.className = 'kpi';
     var label2026 = document.createElement('div'); label2026.className = 'label'; label2026.textContent = p.base + ' 2026';
@@ -3622,6 +3705,7 @@ const combinedHtml = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow,noarchive">
 <title>${reportTitle}</title>
 <style>${MCKINSEY_CSS}
   /* Restyle stage: the shell chrome now reads the --shell-* custom properties
@@ -3643,10 +3727,10 @@ const combinedHtml = `<!doctype html>
   #tabs button { background: var(--shell-nav); color: var(--shell-nav-text); border: none; border-right: 1px solid var(--shell-nav-sep); padding: 9px 13px; cursor: pointer; font-size: 12.5px; }
   #tabs button.active { background: var(--shell-nav-active); color: var(--shell-nav-text); font-weight: bold; box-shadow: inset 0 -2px 0 var(--shell-accent); }
   #tabs button:hover { background: var(--shell-nav-hover); }
-  #themeToggle, #langToggle { background: var(--shell-nav-active); color: var(--shell-nav-text); border: none; padding: 9px 13px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
-  #themeToggle:hover, #langToggle:hover { background: var(--shell-nav-hover); }
+  #themeToggle, #langToggle, #accessLogout { background: var(--shell-nav-active); color: var(--shell-nav-text); border: none; padding: 9px 13px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
+  #themeToggle:hover, #langToggle:hover, #accessLogout:hover { background: var(--shell-nav-hover); }
   #langToggle { border-left: 1px solid var(--shell-nav-sep); }
-  #tabs button:focus-visible, #themeToggle:focus-visible, #langToggle:focus-visible { outline: 2px solid var(--shell-accent); outline-offset: -2px; }
+  #tabs button:focus-visible, #themeToggle:focus-visible, #langToggle:focus-visible, #accessLogout:focus-visible { outline: 2px solid var(--shell-accent); outline-offset: -2px; }
   iframe { flex: 1 1 auto; min-height: 0; width: 100%; border: none; display: block; }
   #introOverlay { position: fixed; inset: 0; background: rgba(5,28,44,0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
   #introOverlay.hidden { display: none; }
@@ -3661,9 +3745,33 @@ const combinedHtml = `<!doctype html>
   #introFooter label { font-size: 13px; color: var(--shell-muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
   #introClose { background: var(--shell-accent); color: #ffffff; border: none; border-radius: 3px; padding: 9px 20px; font-size: 14px; cursor: pointer; }
   #introClose:hover { background: var(--shell-nav-active); }
+  body.access-locked { overflow: hidden; }
+  #accessGate { position: fixed; inset: 0; z-index: 5000; display: flex; align-items: center; justify-content: center; padding: 20px; background: linear-gradient(145deg, #051c2c 0%, #123b63 55%, #1a5c8a 100%); }
+  #accessGate.hidden { display: none; }
+  #accessCard { width: min(420px, 100%); box-sizing: border-box; padding: 30px; background: #ffffff; color: #051c2c; border: 1px solid #c9d4dc; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.32); }
+  #accessCard h1 { margin: 0 0 8px; font: 600 25px/1.2 Georgia, serif; color: #123b63; }
+  #accessCard p { margin: 0 0 22px; color: #5b6b79; font-size: 13px; line-height: 1.5; }
+  #accessCard label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+  #accessCode { width: 100%; box-sizing: border-box; height: 44px; padding: 9px 11px; border: 1px solid #aeb9c8; border-radius: 4px; font-size: 16px; }
+  #accessCode:focus { outline: 3px solid rgba(26,92,138,0.22); border-color: #1a5c8a; }
+  #accessSubmit { width: 100%; margin-top: 14px; padding: 11px 15px; border: 0; border-radius: 4px; background: #1a5c8a; color: #ffffff; font-size: 15px; font-weight: 600; cursor: pointer; }
+  #accessSubmit:hover { background: #123b63; }
+  #accessError { min-height: 18px; margin-top: 10px; color: #a63d40; font-size: 13px; }
 </style>
 </head>
-<body>
+<body class="access-locked">
+<div id="accessGate" role="dialog" aria-modal="true" aria-labelledby="accessTitle">
+  <form id="accessForm" autocomplete="off">
+    <div id="accessCard">
+      <h1 id="accessTitle">MTC Performance Report</h1>
+      <p>Enter the MTC access code to review this report.<br>請輸入 MTC 存取碼以查看報告。</p>
+      <label for="accessCode">Access code / 存取碼</label>
+      <input id="accessCode" type="password" autocomplete="current-password" required autofocus>
+      <button id="accessSubmit" type="submit">Open Report / 開啟報告</button>
+      <div id="accessError" role="alert" aria-live="polite"></div>
+    </div>
+  </form>
+</div>
 <div id="introOverlay" class="hidden">
   <div id="introModal">
     <h2>Welcome / 歡迎使用</h2>
@@ -3695,9 +3803,41 @@ const combinedHtml = `<!doctype html>
   <div id="tabs"></div>
   <button id="langToggle">中文</button>
   <button id="themeToggle">🌙 Dark Mode</button>
+  <button id="accessLogout">Logout / 登出</button>
 </div>
 <iframe id="sheetFrame" title="Report sheet"></iframe>
 <script>
+(function initAccessGate() {
+  var SESSION_KEY = 'mtc_report_session_v1';
+  var gate = document.getElementById('accessGate');
+  var form = document.getElementById('accessForm');
+  var input = document.getElementById('accessCode');
+  var error = document.getElementById('accessError');
+  var logout = document.getElementById('accessLogout');
+  function unlockReport() {
+    document.body.classList.remove('access-locked');
+    gate.classList.add('hidden');
+  }
+  var signedIn = false;
+  try { signedIn = sessionStorage.getItem(SESSION_KEY) === 'MTC'; } catch (e) {}
+  if (signedIn) unlockReport();
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (String(input.value || '').trim().toUpperCase() !== 'MTC') {
+      error.textContent = 'Incorrect access code. / 存取碼不正確。';
+      input.select();
+      return;
+    }
+    try { sessionStorage.setItem(SESSION_KEY, 'MTC'); } catch (e) {}
+    input.value = '';
+    error.textContent = '';
+    unlockReport();
+  });
+  logout.addEventListener('click', function () {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+    location.reload();
+  });
+})();
 ${I18N_JS}
 var SHEETS = ${sheetsJsonStr};
 var tabsEl = document.getElementById('tabs');

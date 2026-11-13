@@ -1,13 +1,13 @@
 // Real-browser verification of the generated MTC Sales Report HTML.
-// Usage: node verify_report.js <path-to-html> [--webkit]
+// Usage: node verify_report.js <path-to-html-or-url> [--webkit]
 const { chromium, webkit } = require('playwright');
 const path = require('path');
 
 const filePath = process.argv[2];
 const useWebkit = process.argv.includes('--webkit');
-if (!filePath) { console.error('Usage: node verify_report.js <path-to-html> [--webkit]'); process.exit(1); }
+if (!filePath) { console.error('Usage: node verify_report.js <path-to-html-or-url> [--webkit]'); process.exit(1); }
 
-const fileUrl = 'file:///' + path.resolve(filePath).replace(/\\/g, '/');
+const fileUrl = /^https?:\/\//i.test(filePath) ? filePath : 'file:///' + path.resolve(filePath).replace(/\\/g, '/');
 
 (async () => {
   const engine = useWebkit ? webkit : chromium;
@@ -20,6 +20,22 @@ const fileUrl = 'file:///' + path.resolve(filePath).replace(/\\/g, '/');
 
   await page.goto(fileUrl, { waitUntil: 'load', timeout: 60000 });
   await page.waitForTimeout(500);
+
+  // Access gate: reject a wrong code, then accept the configured MTC code.
+  const accessGate = page.locator('#accessGate');
+  if (await accessGate.count()) {
+    const initiallyVisible = await accessGate.isVisible();
+    await page.locator('#accessCode').fill('WRONG');
+    await page.locator('#accessSubmit').click();
+    const errorText = await page.locator('#accessError').textContent();
+    const stillVisibleAfterWrong = await accessGate.isVisible();
+    await page.locator('#accessCode').fill('MTC');
+    await page.locator('#accessSubmit').click();
+    await page.waitForTimeout(150);
+    const hiddenAfterCorrect = !(await accessGate.isVisible());
+    console.log('Access gate test: initial=' + initiallyVisible + ' wrongRejected=' +
+      (stillVisibleAfterWrong && /Incorrect/.test(errorText || '')) + ' correctAccepted=' + hiddenAfterCorrect);
+  }
 
   // Dismiss intro modal
   const introBtn = page.locator('#introClose');
@@ -87,6 +103,15 @@ const fileUrl = 'file:///' + path.resolve(filePath).replace(/\\/g, '/');
   console.log('--- Console/page errors captured ---');
   if (errors.length === 0) console.log('(none)');
   else errors.forEach((e) => console.log(e));
+
+  // Logout clears the session-only gate and returns the viewer to login.
+  const logoutBtn = page.locator('#accessLogout');
+  if (await logoutBtn.count()) {
+    await logoutBtn.click();
+    await page.waitForLoadState('load');
+    await page.waitForTimeout(150);
+    console.log('Logout test: gateVisible=' + await page.locator('#accessGate').isVisible());
+  }
 
   await browser.close();
   console.log('Verification run complete.');

@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow,noarchive">
 <title>MTC Performance Report - 2025-01 to 2026-10</title>
 <style>
 :root {
@@ -69,10 +70,10 @@ table.dataTable thead th { border-bottom: 1px solid var(--border); }
   #tabs button { background: var(--shell-nav); color: var(--shell-nav-text); border: none; border-right: 1px solid var(--shell-nav-sep); padding: 9px 13px; cursor: pointer; font-size: 12.5px; }
   #tabs button.active { background: var(--shell-nav-active); color: var(--shell-nav-text); font-weight: bold; box-shadow: inset 0 -2px 0 var(--shell-accent); }
   #tabs button:hover { background: var(--shell-nav-hover); }
-  #themeToggle, #langToggle { background: var(--shell-nav-active); color: var(--shell-nav-text); border: none; padding: 9px 13px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
-  #themeToggle:hover, #langToggle:hover { background: var(--shell-nav-hover); }
+  #themeToggle, #langToggle, #accessLogout { background: var(--shell-nav-active); color: var(--shell-nav-text); border: none; padding: 9px 13px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
+  #themeToggle:hover, #langToggle:hover, #accessLogout:hover { background: var(--shell-nav-hover); }
   #langToggle { border-left: 1px solid var(--shell-nav-sep); }
-  #tabs button:focus-visible, #themeToggle:focus-visible, #langToggle:focus-visible { outline: 2px solid var(--shell-accent); outline-offset: -2px; }
+  #tabs button:focus-visible, #themeToggle:focus-visible, #langToggle:focus-visible, #accessLogout:focus-visible { outline: 2px solid var(--shell-accent); outline-offset: -2px; }
   iframe { flex: 1 1 auto; min-height: 0; width: 100%; border: none; display: block; }
   #introOverlay { position: fixed; inset: 0; background: rgba(5,28,44,0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
   #introOverlay.hidden { display: none; }
@@ -87,9 +88,33 @@ table.dataTable thead th { border-bottom: 1px solid var(--border); }
   #introFooter label { font-size: 13px; color: var(--shell-muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
   #introClose { background: var(--shell-accent); color: #ffffff; border: none; border-radius: 3px; padding: 9px 20px; font-size: 14px; cursor: pointer; }
   #introClose:hover { background: var(--shell-nav-active); }
+  body.access-locked { overflow: hidden; }
+  #accessGate { position: fixed; inset: 0; z-index: 5000; display: flex; align-items: center; justify-content: center; padding: 20px; background: linear-gradient(145deg, #051c2c 0%, #123b63 55%, #1a5c8a 100%); }
+  #accessGate.hidden { display: none; }
+  #accessCard { width: min(420px, 100%); box-sizing: border-box; padding: 30px; background: #ffffff; color: #051c2c; border: 1px solid #c9d4dc; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.32); }
+  #accessCard h1 { margin: 0 0 8px; font: 600 25px/1.2 Georgia, serif; color: #123b63; }
+  #accessCard p { margin: 0 0 22px; color: #5b6b79; font-size: 13px; line-height: 1.5; }
+  #accessCard label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+  #accessCode { width: 100%; box-sizing: border-box; height: 44px; padding: 9px 11px; border: 1px solid #aeb9c8; border-radius: 4px; font-size: 16px; }
+  #accessCode:focus { outline: 3px solid rgba(26,92,138,0.22); border-color: #1a5c8a; }
+  #accessSubmit { width: 100%; margin-top: 14px; padding: 11px 15px; border: 0; border-radius: 4px; background: #1a5c8a; color: #ffffff; font-size: 15px; font-weight: 600; cursor: pointer; }
+  #accessSubmit:hover { background: #123b63; }
+  #accessError { min-height: 18px; margin-top: 10px; color: #a63d40; font-size: 13px; }
 </style>
 </head>
-<body>
+<body class="access-locked">
+<div id="accessGate" role="dialog" aria-modal="true" aria-labelledby="accessTitle">
+  <form id="accessForm" autocomplete="off">
+    <div id="accessCard">
+      <h1 id="accessTitle">MTC Performance Report</h1>
+      <p>Enter the MTC access code to review this report.<br>請輸入 MTC 存取碼以查看報告。</p>
+      <label for="accessCode">Access code / 存取碼</label>
+      <input id="accessCode" type="password" autocomplete="current-password" required autofocus>
+      <button id="accessSubmit" type="submit">Open Report / 開啟報告</button>
+      <div id="accessError" role="alert" aria-live="polite"></div>
+    </div>
+  </form>
+</div>
 <div id="introOverlay" class="hidden">
   <div id="introModal">
     <h2>Welcome / 歡迎使用</h2>
@@ -121,9 +146,41 @@ table.dataTable thead th { border-bottom: 1px solid var(--border); }
   <div id="tabs"></div>
   <button id="langToggle">中文</button>
   <button id="themeToggle">🌙 Dark Mode</button>
+  <button id="accessLogout">Logout / 登出</button>
 </div>
 <iframe id="sheetFrame" title="Report sheet"></iframe>
 <script>
+(function initAccessGate() {
+  var SESSION_KEY = 'mtc_report_session_v1';
+  var gate = document.getElementById('accessGate');
+  var form = document.getElementById('accessForm');
+  var input = document.getElementById('accessCode');
+  var error = document.getElementById('accessError');
+  var logout = document.getElementById('accessLogout');
+  function unlockReport() {
+    document.body.classList.remove('access-locked');
+    gate.classList.add('hidden');
+  }
+  var signedIn = false;
+  try { signedIn = sessionStorage.getItem(SESSION_KEY) === 'MTC'; } catch (e) {}
+  if (signedIn) unlockReport();
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (String(input.value || '').trim().toUpperCase() !== 'MTC') {
+      error.textContent = 'Incorrect access code. / 存取碼不正確。';
+      input.select();
+      return;
+    }
+    try { sessionStorage.setItem(SESSION_KEY, 'MTC'); } catch (e) {}
+    input.value = '';
+    error.textContent = '';
+    unlockReport();
+  });
+  logout.addEventListener('click', function () {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+    location.reload();
+  });
+})();
 
 var I18N = {
   en: {
