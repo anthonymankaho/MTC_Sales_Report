@@ -237,11 +237,11 @@ const ACTION_EN_JS = Object.keys(ACTION_EN).map(k => '    ' + k + ': ' + JSON.st
 const I18N_JS = `
 var I18N = {
   en: {
-    tab_dashboard: 'Dashboard', tab_data: 'Data', tab_exrate: 'Exchange Rate',
+    tab_dashboard: 'Dashboard', tab_data: 'Shipped Data', tab_forecast: 'Forecast Data', tab_exrate: 'Exchange Rate',
     tab_yoyCustomers: 'YoY: Customers', tab_yoyFabrication: 'YoY: Fabrication',
     tab_yoyProdFamily: 'YoY: Prod Family', tab_yoyPartId: 'YoY: Part ID',
     tab_yoyNetNetMargin: 'YoY: Net Net Margin', tab_customerQuarter: 'Customer-Quarter', tab_purchaseYtdVendor: 'Purchase: YTD by Vendor',
-    title_data: 'Data', title_exrate: 'Exchange Rate',
+    title_data: 'Shipped Data', title_forecast: 'Forecast Data', title_exrate: 'Exchange Rate',
     title_yoyCustomers: '2026 v 2025 by Customers', title_yoyFabrication: '2026 v 2025 by Fabrication',
     title_yoyProdFamily: '2026 v 2025 by Prod Family', title_yoyPartId: '2026 v 2025 by Part ID',
     title_yoyNetNetMargin: '2026 v 2025 by NET NET MARGIN', title_customerQuarter: 'Net Margin by Customer-Quarter',
@@ -281,6 +281,13 @@ var I18N = {
     yoyChangeCol: '2025 vs 2026 Net Sales % Change',
     introDashboard: 'Filter by year, month, customer, vendor or country - the 3D trade globe, 4 KPIs and 6 charts update instantly.',
     introData: 'The full transaction ledger behind every number in this report - click any highlighted value on another tab and it lands here, pre-filtered.',
+    introForecast: 'Outstanding (unshipped) sales orders joined 1:1 to their purchase orders, valued at outstanding quantity and bucketed by Ship By Date. No commission report yet, so Net = Gross.',
+    actionForecast: 'Outstanding forecast valued at unshipped quantity, by Ship By Date.',
+    rowTotal: 'Total Performance', rowShipped: 'Shipped', rowDomestic: 'Domestic', rowForecast: 'Forecast',
+    totalSectionLabel: 'Total includes:', secShipped: 'Shipped', secForecast: 'Forecast', secDomestic: 'Domestic',
+    kpiForecastNote: 'Forecast: Net Sales = Sales USD, Net Cost = Prime USD, Net Margin = Gross Cont (no commission yet).',
+    kpiDomesticNote: 'Domestic: derived USD snapshot; MTC commission is earning (gain), not cost.',
+    sfNote: '(affects the Total Performance row only)', domMarginNote: 'MTC commission (earning)',
     introExRate: 'The Platinum Buy Rate table used to convert every foreign-currency figure in this report to USD.',
     introYoyCustomers: '2026 vs 2025 by customer, with a Total Index above the table - click any name, country or number to see the transactions behind it.',
     introYoyFabrication: 'The same year-over-year comparison as the Customers tab, grouped by Fabrication Code.',
@@ -301,11 +308,11 @@ ${DOM_EN_JS}
 ${ACTION_EN_JS}
   },
   zh: {
-    tab_dashboard: '總覽', tab_data: '明細資料', tab_exrate: '匯率',
+    tab_dashboard: '總覽', tab_data: '出貨資料', tab_forecast: '預測資料', tab_exrate: '匯率',
     tab_yoyCustomers: '年度比較：客戶', tab_yoyFabrication: '年度比較：加工類別',
     tab_yoyProdFamily: '年度比較：產品家族', tab_yoyPartId: '年度比較：料號',
     tab_yoyNetNetMargin: '年度比較：淨淨毛利', tab_customerQuarter: '客戶季度毛利', tab_purchaseYtdVendor: '採購：年度供應商排行',
-    title_data: '明細資料', title_exrate: '匯率',
+    title_data: '出貨資料', title_forecast: '預測資料', title_exrate: '匯率',
     title_yoyCustomers: '2026 對比 2025：依客戶', title_yoyFabrication: '2026 對比 2025：依加工類別',
     title_yoyProdFamily: '2026 對比 2025：依產品家族', title_yoyPartId: '2026 對比 2025：依料號',
     title_yoyNetNetMargin: '2026 對比 2025：依淨淨毛利', title_customerQuarter: '客戶季度淨毛利',
@@ -345,6 +352,13 @@ ${ACTION_EN_JS}
     yoyChangeCol: '2025對比2026 Net銷售額 % 變動',
     introDashboard: '依年度、月份、客戶、供應商或國家篩選 — 3D 貿易地球、4 項 KPI 與 6 個圖表即時更新。',
     introData: '本報表所有數字背後的完整交易明細 — 點擊其他頁籤中任何標示的數值，都會跳到這裡並自動套用篩選。',
+    introForecast: '未出貨銷售訂單與採購訂單 1:1 配對，以未出貨數量計價、按 Ship By Date 分桶。尚未有佣金報告，故 Net = Gross。',
+    actionForecast: '未出貨預測以未出貨數量計價，按 Ship By Date 分期。',
+    rowTotal: '總體表現', rowShipped: '已出貨', rowDomestic: '國內', rowForecast: '預測',
+    totalSectionLabel: '總體包含:', secShipped: '已出貨', secForecast: '預測', secDomestic: '國內',
+    kpiForecastNote: '預測:Net銷售 = Sales USD、Net成本 = Prime USD、Net毛利 = Gross Cont(尚未有佣金)。',
+    kpiDomesticNote: '國內:推算 USD 快照;MTC 佣金係收入(gain),唔係成本。',
+    sfNote: '(只影響總體表現列)', domMarginNote: 'MTC 佣金(收入)',
     introExRate: '用於將本報表所有外幣數字換算為 USD 的白金買入匯率表。',
     introYoyCustomers: '依客戶呈現 2026 對比 2025，表格上方附總計指標 — 點擊任何名稱、國家或數字可查看其背後的交易明細。',
     introYoyFabrication: '與客戶頁籤相同的年度比較邏輯，改依加工代碼分組。',
@@ -479,6 +493,13 @@ body[data-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_butto
 body[data-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
 body[data-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_button:hover { background: var(--hover-bg) !important; color: var(--text) !important; }
 .kpis { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.section-filter { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 10px; padding: 8px 12px; border: 1px solid var(--border-light); border-radius: 4px; background: var(--card-bg); }
+.section-filter .sf-label { font-size: 12px; font-weight: 700; color: var(--text); }
+.section-filter .sf-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); cursor: pointer; }
+.section-filter .sf-note { font-size: 11px; color: var(--text-muted); }
+.kpi-row-label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: 10px 0 6px; border-left: 3px solid var(--accent); padding-left: 8px; }
+.kpis-total .kpi { border-bottom: 2px solid var(--accent); background: var(--hover-bg); }
+.kpis-forecast .kpi { border-bottom: 2px dashed var(--accent); }
 .kpi { background: var(--card-bg); padding: 16px 24px; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); flex: 1; min-width: 180px; }
 .kpi .label { font-size: 12px; color: var(--text-muted); }
 .kpi .value { font-size: 24px; font-weight: bold; color: var(--accent); text-align: right; }
@@ -1502,6 +1523,33 @@ const dashRows = dataSheet.rows.map(r => [
 // dashRows columns: 0=Year,1=Month,2=Customer,3=Vendor,4=Country(customer),5=Sales,
 // 6=Cost,7=Margin,8=Country of origin (sourcing)
 
+// ---- FORECAST section (2026-11-25): outstanding-order forecast from
+// MTC_FORECAST_YYYYMM_UPDATED.xlsx (98-col data sheet). Same compact layout as
+// dashRows so the Dashboard can sum Shipped + Forecast + Domestic. Forecast has
+// no commission report, so Net Sales = Sales_USD, Net Cost = Prime_USD,
+// Net Margin = Gross_Cont_USD (user-confirmed basis).
+const forecastSheet = readJsonOptional('forecast_sheet.json');
+let forecastRows = [];
+if (forecastSheet && Array.isArray(forecastSheet.rows)) {
+  const FH = forecastSheet.header;
+  const fi = (n) => FH.indexOf(n);
+  const fYear = fi('Year'), fMonth = fi('yyyy-mm'), fCust = fi('Cust_name'), fVend = fi('VEND_NAME'),
+        fCountry = fi('Cust_Countries'), fSales = fi('Sales_USD'), fCost = fi('Prime_USD'),
+        fMargin = fi('Gross_Cont_USD'), fOrigin = fi('Vendor Country');
+  forecastRows = forecastSheet.rows.map(r => [
+    typeof r[fYear] === 'number' ? String(r[fYear]) : (r[fYear] || ''),
+    r[fMonth], r[fCust], r[fVend], r[fCountry],
+    typeof r[fSales] === 'number' ? r[fSales] : 0,
+    typeof r[fCost] === 'number' ? r[fCost] : 0,
+    typeof r[fMargin] === 'number' ? r[fMargin] : 0,
+    r[fOrigin]
+  ]);
+  console.log('Forecast section: ' + forecastRows.length + ' outstanding rows loaded');
+} else {
+  console.warn('WARNING: forecast_sheet.json absent - Forecast section skipped');
+}
+const forecastRowsJsonStr = neutralize(JSON.stringify(forecastRows));
+
 const yearValues = Array.from(new Set(dashRows.map(r => r[0]))).filter(Boolean).sort();
 const monthValues = Array.from(new Set(dashRows.map(r => r[1]))).filter(Boolean).sort();
 const custValues = Array.from(new Set(dashRows.map(r => r[2]))).filter(Boolean).sort();
@@ -1769,13 +1817,40 @@ ${MCKINSEY_CSS}
   <div><label class="fl" data-i18n="filterCountry">Country</label><div class="ms" id="ms-country"></div></div>
   <div style="align-self:flex-end"><button id="resetBtn" data-i18n="resetFilters">Reset filters</button></div>
 </div>
+<div class="section-filter" id="sectionFilter">
+  <span class="sf-label" data-i18n="totalSectionLabel">Total includes:</span>
+  <label class="sf-opt"><input type="checkbox" id="sec-shipped" checked><span data-i18n="secShipped">Shipped</span></label>
+  <label class="sf-opt"><input type="checkbox" id="sec-forecast" checked><span data-i18n="secForecast">Forecast</span></label>
+  <label class="sf-opt"><input type="checkbox" id="sec-domestic" checked><span data-i18n="secDomestic">Domestic</span></label>
+  <span class="sf-note" data-i18n="sfNote">(affects the Total Performance row only)</span>
+</div>
+<div class="kpi-row-label" data-i18n="rowTotal">Total Performance</div>
+<div class="kpis kpis-total">
+  <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="total-sales">-</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="total-cost">-</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="total-margin">-</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMarginPct">Net Margin %</div><div class="value" id="total-marginpct">-</div></div>
+</div>
+<div class="kpi-row-label" data-i18n="rowShipped">Shipped</div>
 <div class="kpis">
   <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="kpi-sales">-</div><div class="kpi-sub"><span id="kpi-sales-prior">-</span><span class="kpi-delta" id="kpi-sales-delta"></span></div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="kpi-cost">-</div><div class="kpi-sub"><span id="kpi-cost-prior">-</span><span class="kpi-delta" id="kpi-cost-delta"></span></div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="kpi-margin">-</div><div class="kpi-sub"><span id="kpi-margin-prior">-</span><span class="kpi-delta" id="kpi-margin-delta"></span></div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMarginPct">Net Margin %</div><div class="value" id="kpi-marginpct">-</div><div class="kpi-sub"><span id="kpi-marginpct-prior">-</span><span class="kpi-delta" id="kpi-marginpct-delta"></span></div></div>
 </div>
-${domStripHtml}
+<div class="kpi-row-label" data-i18n="rowDomestic">Domestic</div>
+<div class="kpis kpis-dom">
+  <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomSales">Domestic Net Sales (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-sales">-</div><div class="kpi-sub"><span data-i18n="domBasis">2026 total</span> · <span data-i18n="domAsOf">snapshot as of</span> <span id="dom-asof">-</span></div></div>
+  <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomCommission">Domestic MTC Commission (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-comm">-</div><div class="kpi-sub" data-i18n="kpiDomesticNote">MTC commission is earning (gain), not cost.</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="dom-margin">-</div><div class="kpi-sub" data-i18n="domMarginNote">Sales + commission earning</div></div>
+</div>
+<div class="kpi-row-label" data-i18n="rowForecast">Forecast</div>
+<div class="kpis kpis-forecast">
+  <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="fc-sales">-</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="fc-cost">-</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="fc-margin">-</div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMarginPct">Net Margin %</div><div class="value" id="fc-marginpct">-</div><div class="kpi-sub" data-i18n="kpiForecastNote">Net = Gross (no commission yet)</div></div>
+</div>
 <div class="globe-section" id="globeSection">
   <div class="globe-head">
     <div>
@@ -1837,6 +1912,8 @@ ${domStripHtml}
 ${I18N_JS}
 ${MULTISELECT_JS}
 var ROWS = ${dashRowsJsonStr};
+var FROWS = ${forecastRowsJsonStr};
+var DOM_MEMO = ${domMemo ? JSON.stringify(domMemo) : 'null'};
 var YEAR_VALUES = ${yearValuesJsonStr};
 var MONTH_VALUES = ${monthValuesJsonStr};
 var CUST_VALUES = ${custValuesJsonStr};
@@ -2066,6 +2143,56 @@ function renderKpis() {
   var pp = (curPct !== null && prvPct !== null) ? { p: prvPct.toFixed(1) + '%', d: (curPct - prvPct >= 0 ? '+' : '') + (curPct - prvPct).toFixed(1) + ' pp', dir: Math.sign(curPct - prvPct) } : { p: '—', d: '—', dir: 0 };
   card('marginpct', pp, prvPct !== null);
 }
+// ---- 4-section Dashboard index (2026-11-25): Total / Shipped / Domestic /
+// Forecast. Shipped = filter-reactive lastRows (renderKpis above). Forecast =
+// FROWS filtered by the SAME multiselects. Domestic = static derived-USD
+// snapshot; MTC commission is an EARNING (gain), not a cost (user decision),
+// so it contributes to margin, never to cost. The section checkboxes gate
+// ONLY the Total row. Charts/globe below remain Shipped-based.
+function getFilteredF() {
+  var selYear = msYear.getSelected(), selMonth = msMonth.getSelected(), selCust = msCust.getSelected(),
+      selVend = msVend.getSelected(), selCountry = msCountry.getSelected();
+  return FROWS.filter(function (r) {
+    return matchesFilter(r[0], selYear) && matchesFilter(r[1], selMonth) && matchesFilter(r[2], selCust) &&
+           matchesFilter(r[3], selVend) && matchesFilter(r[4], selCountry);
+  });
+}
+function sumRows(rows) {
+  var s = 0, c = 0, m = 0;
+  rows.forEach(function (r) { s += r[5]; c += r[6]; m += r[7]; });
+  return { sales: s, cost: c, margin: m };
+}
+function setKpi(prefix, sales, cost, margin) {
+  var se = document.getElementById(prefix + '-sales'); if (se) se.textContent = fmt(sales);
+  var ce = document.getElementById(prefix + '-cost'); if (ce) ce.textContent = fmt(cost);
+  var me = document.getElementById(prefix + '-margin'); if (me) me.textContent = fmt(margin);
+  var pe = document.getElementById(prefix + '-marginpct'); if (pe) pe.textContent = sales ? (margin / sales * 100).toFixed(1) + '%' : '-';
+}
+function renderSectionKpis() {
+  var shipped = sumRows(lastRows);
+  // Forecast is a forward-looking outstanding snapshot (2026-10 .. 2027-06):
+  // show the FULL forecast regardless of the Year/Month filters (like the
+  // Domestic snapshot), so Total Performance reflects the whole commitment.
+  var fc = sumRows(FROWS);
+  var dom = DOM_MEMO ? { sales: DOM_MEMO.sales || 0, comm: DOM_MEMO.comm || 0 } : { sales: 0, comm: 0 };
+  var ds = document.getElementById('dom-sales'); if (ds) ds.textContent = DOM_MEMO ? fmt(dom.sales) : '-';
+  var dc = document.getElementById('dom-comm'); if (dc) dc.textContent = DOM_MEMO ? fmt(dom.comm) : '-';
+  var dm = document.getElementById('dom-margin'); if (dm) dm.textContent = DOM_MEMO ? fmt(dom.comm) : '-';
+  var da = document.getElementById('dom-asof'); if (da && DOM_MEMO) da.textContent = DOM_MEMO.asOf || '-';
+  setKpi('fc', fc.sales, fc.cost, fc.margin);
+  var incS = document.getElementById('sec-shipped').checked,
+      incF = document.getElementById('sec-forecast').checked,
+      incD = document.getElementById('sec-domestic').checked;
+  var ts = 0, tc = 0, tm = 0;
+  if (incS) { ts += shipped.sales; tc += shipped.cost; tm += shipped.margin; }
+  if (incF) { ts += fc.sales; tc += fc.cost; tm += fc.margin; }
+  if (incD) { ts += dom.sales; tc += 0; tm += dom.comm; }
+  setKpi('total', ts, tc, tm);
+}
+['sec-shipped', 'sec-forecast', 'sec-domestic'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('change', renderSectionKpis);
+});
 // ---- Action title (consulting convention: a chart page opens with its
 // conclusion, not its label). One line computed from the SAME aggregates the
 // KPI cards show, plus the true YoY delta over exactly the months currently
@@ -2414,6 +2541,7 @@ function renderGeo() {
 function render() {
   lastRows = getFiltered();
   renderKpis();
+  renderSectionKpis();
   renderAction();
   renderSalesCostTrend();
   renderMarginTrend();
@@ -3045,6 +3173,18 @@ const dataSheetHtml = buildDataTablesHtml(H, dataSheet.rows, 'Data', true,
 console.log('Data sheet built (' + (dataSheetHtml.length / 1024 / 1024).toFixed(2) + ' MB)');
 
 // =========================================================================
+// Forecast Data sheet (outstanding-order forecast, 98-col)
+// =========================================================================
+let forecastSheetHtml = '';
+if (forecastSheet && Array.isArray(forecastSheet.rows)) {
+  forecastSheetHtml = buildDataTablesHtml(forecastSheet.header, forecastSheet.rows, 'Forecast Data', true,
+    ['Cust_name', 'VEND_NAME', 'Cust_Countries', 'yyyy-mm', 'Year', 'Vendor Country', 'Family Category', 'Part_id'],
+    null, 'title_forecast', false, 'introForecast', null, null, null, 'actionForecast',
+    'forecast_sheet.json - outstanding-order forecast (MTC_FORECAST_202610_UPDATED.xlsx) · Ship By Date basis · ' + FX_SOURCE);
+  console.log('Forecast Data sheet built (' + (forecastSheetHtml.length / 1024 / 1024).toFixed(2) + ' MB)');
+}
+
+// =========================================================================
 // Exchange Rate (USD table only)
 // =========================================================================
 const exRateData = readJson('exrate_usd.json');
@@ -3652,6 +3792,7 @@ if (domesticJson && fxDomesticJson) {
 const sheetsData = [
   { key: 'dashboard', name: 'Dashboard', html: dashboardHtml },
   { key: 'data', name: 'Data', html: dataSheetHtml },
+  ...(forecastSheetHtml ? [{ key: 'forecast', name: 'Forecast Data', html: forecastSheetHtml }] : []),
   { key: 'exrate', name: 'Exchange Rate', html: exRateHtml },
   { key: 'yoyCustomers', name: 'YoY: Customers', html: yoyCustomersHtml },
   { key: 'yoyFabrication', name: 'YoY: Fabrication', html: yoyFabricationHtml },
