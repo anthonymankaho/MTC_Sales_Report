@@ -257,7 +257,7 @@ var I18N = {
     kpiNetSales: 'Net Sales (USD)', kpiNetCost: 'Net Cost (USD)', kpiNetMargin: 'Net Margin (USD)', kpiNetMarginPct: 'Net Margin %',
     kpiVsLabel: 'vs same months last year',
     kpiDomSales: 'Domestic Net Sales (USD, derived)', kpiDomCommission: 'Domestic MTC Commission (USD, derived)',
-    domBasis: '2026 total', domAsOf: 'snapshot as of',
+    domBasis: '2026 total (shipped + outstanding)', domIndexRemark: 'Includes 2026 shipped and 2026 outstanding. 2027 outstanding is not included.', domAsOf: 'snapshot as of',
     domStripNote: '† Derived USD memo from the Domestic Orders snapshot — Not included in MA/DI USD totals (source workbook policy). Click a card to open the Domestic tab.',
     trendSalesCostTitle: 'Monthly Trend: Sales & Cost (USD), 2025 vs 2026', trendMarginTitle: 'Monthly Trend: Margin (USD), 2025 vs 2026',
     seriesSales: 'Sales', seriesCost: 'Cost', seriesMargin: 'Margin',
@@ -328,7 +328,7 @@ ${ACTION_EN_JS}
     kpiNetSales: 'Net銷售額 (USD)', kpiNetCost: 'Net成本 (USD)', kpiNetMargin: 'Net毛利 (USD)', kpiNetMarginPct: 'Net毛利率',
     kpiVsLabel: '較去年同期',
     kpiDomSales: '國內 Net銷售額 (USD,推算)', kpiDomCommission: '國內 MTC佣金 (USD,推算)',
-    domBasis: '2026合計', domAsOf: '快照截至',
+    domBasis: '2026合計（已含已出貨及未出貨）', domIndexRemark: '已包含 2026 已出貨及 2026 未出貨，不含 2027 未出貨。', domAsOf: '快照截至',
     domStripNote: '† 推算 USD 附註(取自 Domestic Orders 快照) — Not included in MA/DI USD totals(未納入 MA／DI 的 USD 合計)。點卡片可開啟 Domestic 頁。',
     trendSalesCostTitle: '月度趨勢：銷售額與成本 (USD)，2025 對比 2026', trendMarginTitle: '月度趨勢：毛利 (USD)，2025 對比 2026',
     seriesSales: '銷售額', seriesCost: '成本', seriesMargin: '毛利',
@@ -1840,9 +1840,10 @@ ${MCKINSEY_CSS}
 </div>
 <div class="kpi-row-label" data-i18n="rowDomestic">Domestic</div>
 <div class="kpis kpis-dom">
-  <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomSales">Domestic Net Sales (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-sales">-</div><div class="kpi-sub"><span data-i18n="domBasis">2026 total</span> · <span data-i18n="domAsOf">snapshot as of</span> <span id="dom-asof">-</span></div></div>
+  <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomSales">Domestic Net Sales (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-sales">-</div><div class="kpi-sub"><span data-i18n="domBasis">2026 total (shipped + outstanding)</span> · <span data-i18n="domAsOf">snapshot as of</span> <span id="dom-asof">-</span></div></div>
   <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomCommission">Domestic MTC Commission (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-comm">-</div><div class="kpi-sub" data-i18n="kpiDomesticNote">MTC commission is earning (gain), not cost.</div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="dom-margin">-</div><div class="kpi-sub" data-i18n="domMarginNote">Sales + commission earning</div></div>
+  <div class="kpi-dom-note" data-i18n="domIndexRemark">Includes 2026 shipped and 2026 outstanding. 2027 outstanding is not included.</div>
 </div>
 <div class="kpi-row-label" data-i18n="rowForecast">Forecast</div>
 <div class="kpis kpis-forecast">
@@ -2894,7 +2895,7 @@ function aiContext() {
   L.push('KPI UNDER FILTERS: netSalesUsd=' + aiUsd(sales) + ', netCostUsd=' + aiUsd(cost) + ', netMarginUsd=' + aiUsd(margin) + ', marginPct=' + (sales ? (margin / sales * 100).toFixed(1) : '0') + '%; sameMonthsLastYear: sales=' + aiUsd(pS) + ', cost=' + aiUsd(pC) + ', margin=' + aiUsd(pM) + ((pS && sales) ? ', salesYoYpct=' + ((sales - pS) / pS * 100).toFixed(1) : ''));
   if (monthly) L.push('MONTHLY NET SALES (USD): ' + monthly);
   if (gd) L.push('GLOBE MODE: ' + globeMode + ' - TOP BY USD: ' + gd.list.slice(0, 8).map(function (e) { return e.c + ':' + aiUsd(e.usd) + ' (' + (gd.total ? (e.usd / gd.total * 100).toFixed(1) : '0') + '%)'; }).join(', ') + ' - earth, rank list and KPIs all read ONE filtered dataset');
-  if (DOM_MEMO) L.push('DOMESTIC MEMO (separate snapshot workbook; derived USD, NOT included in the MA/DI totals above): sales2026Usd=' + aiUsd(DOM_MEMO.sales) + ', commission2026Usd=' + aiUsd(DOM_MEMO.comm) + ', asOf=' + DOM_MEMO.asOf + '; entities MJP/JPY, MIN/INR, MCN+MZQ/RMB; no 2025 domestic data yet (pending confirmation)');
+  if (DOM_MEMO) L.push('DOMESTIC MEMO (separate snapshot workbook; derived USD): sales2026Usd=' + aiUsd(DOM_MEMO.sales) + ', commission2026Usd=' + aiUsd(DOM_MEMO.comm) + ', asOf=' + DOM_MEMO.asOf + '; the 2026 total INCLUDES shipped and outstanding; 2027 outstanding is excluded; entities MJP/JPY, MIN/INR, MCN+MZQ/RMB; no 2025 domestic data yet (pending confirmation)');
   L.push('ALLOWED FILTER VALUES: Year=[' + YEAR_VALUES.join(', ') + '] Month=[' + MONTH_VALUES.join(', ') + '] Country=[' + COUNTRY_VALUES.join(', ') + '] Customer=[' + CUST_VALUES.slice(0, 40).join(', ') + '] Vendor=[' + VEND_VALUES.slice(0, 40).join(', ') + ']');
   L.push('ACTION PROPOSALS: when a filter or navigation would help, add up to 3 lines AT THE END, each exactly one of: FILTER Year=<value> / FILTER Month=<value> / FILTER Country=<value> / FILTER Customer=<value> / FILTER Vendor=<value> / Tab=<Data|Domestic|Exchange Rate> / Mode=<GlobeSales|GlobePurchase>. Values must be copied EXACTLY from ALLOWED FILTER VALUES - never invent. Lines render as buttons; nothing changes until the user clicks.');
   return L.join('\\n').slice(0, 5800);
