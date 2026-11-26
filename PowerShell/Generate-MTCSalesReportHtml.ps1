@@ -448,6 +448,16 @@ function Export-YoYPivotSheet($ws, $labelColCount, $metricNameRow, $yearRow, $da
     for ($c = 1; $c -le $lastCol; $c++) {
       if ($c -gt 1) { [void]$sb.Append(',') }
       $text = $rawTexts[$c - 1]
+      # A narrow Excel PivotTable cell returns a display string of
+      # "##############" from .Text even though the underlying Value2 is a
+      # valid number.  Keep the report's visible row data numeric instead of
+      # silently turning those hashes into zero in the browser's parser.
+      if ($c -gt $labelColCount -and $text -match '^#+$') {
+        $rawValue = $ws.Cells($r, $c).Value2
+        if ($rawValue -is [double] -or $rawValue -is [single] -or $rawValue -is [decimal] -or $rawValue -is [int] -or $rawValue -is [long]) {
+          $text = ([double]$rawValue).ToString('0.######', [System.Globalization.CultureInfo]::InvariantCulture)
+        }
+      }
       if ($c -le $labelColCount -and $forwardFillCols -contains $c) {
         if ($text -ne "") { $lastLabelValue[$c] = $text }
         elseif ($lastLabelValue.ContainsKey($c)) { $text = $lastLabelValue[$c] }
@@ -768,6 +778,24 @@ try {
     $wbFx.Close($false)
     if ($wsFx) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wsFx) | Out-Null }
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wbFx) | Out-Null
+  }
+
+  # Forecast (outstanding orders) - optional. Source: the newest
+  # Forecast/MTC_FORECAST_YYYYMM_UPDATED.xlsx "data" sheet (98 cols). When
+  # absent the build still succeeds; build_report.js skips the Forecast tab.
+  $forecastDir = Join-Path $projectDir "Forecast"
+  $forecastSrc = Get-ChildItem -Path $forecastDir -Filter "MTC_FORECAST_*_UPDATED.xlsx" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($forecastSrc) {
+    Write-Host "Extracting Forecast data sheet ($($forecastSrc.Name))..."
+    $wbFc = $excel.Workbooks.Open($forecastSrc.FullName, [Type]::Missing, $true)
+    try {
+      Export-FullSheet ($wbFc.Worksheets.Item("data")) "forecast_sheet.json"
+    } finally {
+      $wbFc.Close($false)
+      [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wbFc) | Out-Null
+    }
+  } else {
+    Write-Host "WARNING: no MTC_FORECAST_*_UPDATED.xlsx in $forecastDir - Forecast tab skipped"
   }
 } finally {
   if ($wb) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wb) | Out-Null }

@@ -74,32 +74,69 @@ powershell -ExecutionPolicy Bypass -File PowerShell\Generate-MTCSalesReportHtml.
 the script auto-detects the newest `FIN_MTC Sales & Margin (...)_YYYYMMDD_R#.xlsx` in
 the project root, reads it read-only via Excel COM, reads the Domestic Orders workbook
 (via the `Domestic Orders*.xlsx` wildcard — its name contains em/en dashes) and the
-monthly FX `.xls`, stages **eleven JSON data islands** under `HTML_Report_Generator\_work`
-(plus `family_category_map.json`), then runs `HTML_Report_Generator/build_report.js` to
+monthly FX `.xls`, and the newest `Forecast/MTC_FORECAST_*_UPDATED.xlsx`, stages **twelve
+JSON data islands** under `HTML_Report_Generator\_work` (incl. `forecast_sheet.json`, plus
+`family_category_map.json`), then runs `HTML_Report_Generator/build_report.js` to
 assemble `FIN_MTC_Performance_Report_html_TEMP.html` in the project root. The default
 output path of the generator matches this filename. Pass `-KeepWork`
 to keep the islands for inspection.
 
-The report has **eleven tabs**: Dashboard (KPIs + charts, NET/NET NET toggle), Data (the
-full 145-column ledger), Exchange Rate, five YoY (2026 vs 2025) tabs each with a Total
-Index and pie chart, Customer-Quarter, **Domestic** (2026–2027 MJP/MCN/MZQ/MIN orders and
-commission, per-currency cards, derived-USD memos only), and Purchase: YTD by Vendor.
-The Dashboard headline is a live one-line action title above a full-width **3D trade
-globe** (Global Sales by destination ⇄ Global Purchase by origin; clicking a country
-drills into the Data tab pre-filtered; the Geographic bar and Origin pie remain as the
-automatic WebGL fallback). Every tab supports English/繁中 and light/dark toggles; every
-exhibit is numbered with source footnotes. The whole thing is one self-contained file
-(keep under the 11 MB email budget).
+The report has **twelve tabs**: Dashboard, **Shipped Data** (the actuals ledger, formerly
+"Data"), **Forecast Data** (outstanding orders, see below), Exchange Rate, five YoY
+(2026 vs 2025) tabs each with a Total Index and pie chart, Customer-Quarter, **Domestic**
+(2026–2027 MJP/MCN/MZQ/MIN orders and commission, per-currency cards, derived-USD memos
+only), and Purchase: YTD by Vendor.
 
-A **Qwen AI assistant panel** ("Ask AI", bottom-right) is built into the report and uses
-the hosted Cloudflare AI service by default; no access code is needed. It sends only
-current filters and aggregate figures, never transaction rows or credentials, and can
-propose filters you confirm with Apply. If Cloudflare is unreachable, it tries the local
-office relay at `127.0.0.1:8765`; if both are unavailable, the rest of the report still
-works from `file://` with no network.
+The **Dashboard index reads in four rows** — **Total Performance / Shipped / Domestic /
+Forecast** — each with a bold filter-context line (period · customer · vendor · country).
+A three-checkbox **section filter** (Shipped / Forecast / Domestic) gates **only the Total
+row**. Basis: Shipped = filter-reactive actuals; Forecast = full outstanding snapshot
+(Sales_USD / Prime_USD / Gross_Cont, no commission yet); **Domestic = MTC commission
+earning only** (the domestic companies' sales are NOT MTC revenue), so Total Net Sales =
+Shipped + Forecast + Domestic commission. Below the index: a live one-line action title,
+a full-width **3D trade globe** (Global Sales by destination ⇄ Global Purchase by origin;
+clicking a country drills into Shipped Data pre-filtered), and the charts. Every tab
+supports English/繁中 and light/dark toggles; exhibits are numbered with source footnotes.
+One self-contained file (keep under the 11 MB email budget; currently ~10 MB).
 
-## Current progress (2026-11-11)
+A **Qwen AI assistant panel** ("Ask AI", bottom-right) is **shell-level — available on
+every tab** — and uses the hosted Cloudflare AI service by default; no access code needed.
+It sends only filters and aggregate figures, never transaction rows or credentials, and
+can propose filters/tabs you confirm with Apply. If Cloudflare is unreachable it tries the
+local office relay at `127.0.0.1:8765`; if both are unavailable the report still works
+from `file://` with no network.
 
+A **🤖 Grok Bot** button (tab bar) opens a bilingual modal to connect a personal Grok to
+the report's live data via the **MCP server** `mtc-mcp` (Cloudflare Worker, Streamable
+HTTP at `https://mtc-mcp.anthonym-354.workers.dev/mcp`, public/free): copy the URL, open
+Grok → Connectors → Add custom connector. The worker lives in the GPR-Web repo
+(`workers/mtc-mcp`); tools `mtc_summary / mtc_monthly / mtc_top / mtc_query / mtc_forecast`.
+
+## Forecast data pipeline (Forecast/ folder)
+
+The **Forecast Data** tab comes from `Forecast/MTC_FORECAST_YYYYMM_UPDATED.xlsx` (98-col
+`data` sheet, outstanding orders). The generator auto-detects the newest
+`MTC_FORECAST_*_UPDATED.xlsx` and extracts it to `forecast_sheet.json`; absent → the
+Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`):
+
+1. `fetch_mtc_details.py` — Epicor portal Retrieve of each SO/PO (env `EPICOR_USER/PASS`),
+   cached to `_work_mtc_details_raw.json`; `fetch_missing_pos/sos.py` backfill the 1:1 join.
+2. `combine_mtc_data.py` — joins SO.PonumE27 == PO.PonumJ16 (FIFO by SKU), **outstanding
+   only** (excludes COMPLETED/CANCELLED), values at **Epidueqty** (unshipped qty), buckets
+   by **Ship By Date**, FX from the report's Exchange Rate island (`fx_report_island.json`,
+   USD-per-unit, latest populated month). Lookups (Family Category = Brand Name, Family =
+   Product Family Desc, Meyer Brand, Commodity) from the workbook's Sku/Part/BRAND sheets.
+3. The `Sku`/`Part` lookup sheets are refreshed from MMS (`mms-login` skill; SKU Excel
+   export + GetPartList). Output `MTC_FORECAST_YYYYMM_UPDATED.xlsx` is the forecast source.
+
+## Current progress (2026-11-26)
+
+- 2026-11-26: **Forecast section shipped.** New Forecast Data tab + Shipped Data rename;
+  Dashboard split into 4 rows (Total/Shipped/Domestic/Forecast) with a Total-only section
+  filter and per-row filter-context lines; Domestic = MTC commission earning; Ask AI made
+  shell-level (all tabs); 🤖 Grok Bot connect button + `mtc-mcp` Cloudflare MCP worker
+  (GPR-Web repo). Generator now extracts `forecast_sheet.json`. `FIN_MTC_Performance_Report_html_TEMP.html`
+  is the finished version (pushed to `origin/MTC`). Forecast data pipeline lives in `Forecast/`.
 - 2026-11-11: Desktop folder renamed from `MTC Sales Report Claude` to `MTC Performance Report Claude`, matching the combined MTC Performance Report. The GitHub repository name stays `MTC_Sales_Report`. Sheet names, source file names, and script names are unchanged.
 - Docs consolidated (2026-11-10): README and the report's welcome intro (now v3) were
   rewritten to match the 11-tab MTC Performance Report; the legacy SOP docx was retired —
@@ -146,6 +183,7 @@ works from `file://` with no network.
 | `202609/`, `Pur Comm/` | Archived monthly outputs and purchase-commission history |
 | `Reports/Audit Summaries/`, `Reference/Prompts/` | Dated audit exports; reusable reference prompts |
 | `MTC SANDBOX/` | Untracked test area (revised-script trials, `TEST_*.xlsx`) — never merge-target |
+| `Forecast/` | Forecast data pipeline (Python): `fetch_mtc_details.py`, `combine_mtc_data.py`, `MTC_FORECAST_YYYYMM_UPDATED.xlsx` (forecast source), `fx_report_island.json`, MMS-refreshed Sku/Part lookups |
 
 ## Folder map
 
