@@ -6,3 +6,9 @@ HTML_Report_Generator/_work/
 
 MTC SANDBOX/
 FIN_MTC_Performance_Report_html_TEMP - 複製.html
+
+# Forecast pipeline: keep the Python scripts + fx_report_island.json (FX source);
+# ignore the large workbooks and intermediate data (regenerable, real financial data).
+Forecast/*.xlsx
+Forecast/*.json
+!Forecast/fx_report_island.json
