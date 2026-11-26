@@ -13,19 +13,19 @@
 
 const COPY = {
   en: {
-    colForecastUsd: 'Forecast subtotal purchase cost USD',
-    colForecastNote: 'Outstanding orders only (excludes COMPLETED/CANCELLED), valued at unshipped qty (Epidueqty), bucketed by Ship By Date. Purchase cost = Prime_USD. No commission yet - this column is not part of the 2025/2026 PO Price w/comm totals and is not in the % change.',
+    colForecastUsd: 'Subtotal USD',
+    colForecastNote: 'Forecast subtotal purchase cost USD. Outstanding orders only (excludes COMPLETED/CANCELLED), valued at unshipped qty (Epidueqty), bucketed by Ship By Date. Purchase cost = Prime_USD. No commission yet - this column is not part of the 2025/2026 PO Price w/comm totals and is not in the % change.',
     totalLabel: 'Total',
-    summaryForecast: 'Forecast subtotal',
+    summaryForecast: 'Subtotal',
     forecastUnmatchedTag: 'unmatched forecast',
     forecastUnmatchedFoot: '{n} forecast vendor name(s) did not match a YTD vendor ({amt}). Listed on their own rows and included in the total.',
     forecastAllMatched: 'Every forecast vendor name matched a YTD vendor.'
   },
   zh: {
-    colForecastUsd: '預測採購成本小計 USD',
-    colForecastNote: '僅未完成訂單（不含 COMPLETED／CANCELLED），以未出貨數量（Epidueqty）計價，按 Ship By Date 分桶。採購成本 = Prime_USD，尚未含佣金，故本欄不併入 2025／2026 含佣金採購總額，亦不計入變動百分比。',
+    colForecastUsd: '小計 USD',
+    colForecastNote: '預測採購成本小計 USD。僅未完成訂單（不含 COMPLETED／CANCELLED），以未出貨數量（Epidueqty）計價，按 Ship By Date 分桶。採購成本 = Prime_USD，尚未含佣金，故本欄不併入 2025／2026 含佣金採購總額，亦不計入變動百分比。',
     totalLabel: '合計',
-    summaryForecast: '預測小計',
+    summaryForecast: '小計',
     forecastUnmatchedTag: '未對上預測',
     forecastUnmatchedFoot: '{n} 個預測供應商名稱未能對上年度供應商（{amt}）。已另列並計入合計。',
     forecastAllMatched: '所有預測供應商名稱均已對上年度供應商。'
