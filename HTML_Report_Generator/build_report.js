@@ -3148,6 +3148,9 @@ function aiOpen() {
   if (aiState.online !== false && inp) inp.focus();
 }
 (function aiInit() {
+  // Global AI now lives in the shell (all tabs). Only build the dashboard's own
+  // FAB when this page is opened standalone (not embedded in the report shell).
+  if (window.parent !== window) return;
   var st = document.createElement('style');
   st.id = 'ai-css';
   st.textContent = '#aiBtn{position:fixed;right:18px;bottom:18px;z-index:60;background:var(--accent);color:#fff;border:0;border-radius:20px;padding:9px 16px;font-size:13px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.25);}#aiBtn:hover{filter:brightness(1.12);}'
@@ -4111,6 +4114,297 @@ introCloseBtn.onclick = function () {
   if (introDontShow.checked) { try { localStorage.setItem('reportIntroDismissed_v3', '1'); } catch (e) {} }
   introOverlay.classList.add('hidden');
 };
+
+// =========================================================================
+// GLOBAL AI assistant (shell-level, available on EVERY tab). The dashboard's
+// own FAB is suppressed when embedded; this shell panel floats over whichever
+// tab is active. Context is report-level (Shipped + Forecast + Domestic) read
+// from shell-injected islands, plus the live dashboard filters when present.
+// =========================================================================
+var AI_HOSTED = 'https://meyer-ai-assistant.anthonym-354.workers.dev/mtc';
+var AI_RELAY = 'http://127.0.0.1:8765';
+var AI_ROWS = ${dashRowsJsonStr};
+var AI_FROWS = ${forecastRowsJsonStr};
+var AI_DOM = ${domMemo ? JSON.stringify(domMemo) : 'null'};
+var AI_MONTHS = ${monthValuesJsonStr};
+var AI_YEARS = ${yearValuesJsonStr};
+var AI_CUSTS = ${custValuesJsonStr};
+var AI_VENDS = ${vendValuesJsonStr};
+var AI_COUNTRIES = ${countryValuesJsonStr};
+var aiState = { history: [], busy: false, online: null, mode: 'hosted', lastError: '' };
+var aiUser = 'MTC-report';
+try { aiUser = localStorage.getItem('mtc-ai-user') || 'MTC-report'; } catch (e) {}
+function aiUsd(v) { return Math.round(v).toLocaleString('en-US'); }
+function aiProbe() {
+  aiState.mode = 'hosted'; aiState.lastError = '';
+  function hostedOnce() {
+    return fetch(AI_HOSTED + '/health', { signal: (function () { var c = new AbortController(); setTimeout(function () { c.abort(); }, 8000); return c.signal; })() })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }, function () { return { ok: false, b: null }; }); })
+      .then(function (res) { if (res.ok && res.b && res.b.ok === true) { aiState.online = true; aiState.lastError = ''; return true; } aiState.lastError = (res.b && res.b.error) || 'Cloudflare AI service unavailable.'; return false; })
+      .catch(function () { aiState.lastError = 'Cannot reach Cloudflare right now. Close and reopen the assistant to retry.'; return false; });
+  }
+  return hostedOnce().then(function (ok) {
+    if (ok) return true;
+    return hostedOnce().then(function (ok2) {
+      if (ok2) return true;
+      aiState.mode = 'relay';
+      return fetch(AI_RELAY + '/health', { signal: (function () { var c = new AbortController(); setTimeout(function () { c.abort(); }, 5000); return c.signal; })() })
+        .then(function (r) { aiState.online = r.ok; if (r.ok) aiState.lastError = ''; return r.ok; })
+        .catch(function () { aiState.online = false; aiState.mode = 'hosted'; return false; });
+    });
+  });
+}
+function aiDashWin() { var w = frameEl.contentWindow; return (w && w.lastRows) ? w : null; }
+function aiActiveTab() { for (var i = 0; i < tabsEl.children.length; i++) { if (tabsEl.children[i].className === 'active') return SHEETS[i].name; } return 'Dashboard'; }
+function aiSum(rows) { var s = 0, c = 0, m = 0; rows.forEach(function (r) { s += r[5]; c += r[6]; m += r[7]; }); return { sales: s, cost: c, margin: m }; }
+function aiContext() {
+  var dw = aiDashWin();
+  var rows = dw ? dw.lastRows : AI_ROWS;
+  var sh = aiSum(rows);
+  var fc = aiSum(AI_FROWS);
+  var months = Array.from(new Set(rows.map(function (r) { return r[1]; }))).filter(Boolean).sort();
+  var byM = {}; rows.forEach(function (r) { byM[r[1]] = (byM[r[1]] || 0) + r[5]; });
+  var monthly = months.slice(0, 24).map(function (m) { return m + ':' + aiUsd(byM[m] || 0); }).join(', ');
+  var filters = dw ? { Year: dw.msYear.getSelected(), Month: dw.msMonth.getSelected(), Customer: dw.msCust.getSelected(), Vendor: dw.msVend.getSelected(), Country: dw.msCountry.getSelected() } : {};
+  var L = [];
+  L.push('CURRENT APP: MTC Performance Report - single-file interactive report. Answer only about this MTC report. The assistant is available on every tab.');
+  L.push('UI_LANGUAGE: ' + (currentLang === 'zh' ? 'zh-Hant (reply in Traditional Chinese)' : 'en (reply in English)'));
+  L.push('ACTIVE TAB: ' + aiActiveTab());
+  L.push('DATA PERIOD: ' + (AI_MONTHS[0] || '?') + ' to ' + (AI_MONTHS[AI_MONTHS.length - 1] || '?') + '; shipped ledger rows ' + AI_ROWS.length + '; forecast outstanding rows ' + AI_FROWS.length);
+  L.push('ACTIVE FILTERS (dashboard): ' + JSON.stringify(filters));
+  L.push('SHIPPED (under filters): netSalesUsd=' + aiUsd(sh.sales) + ', netCostUsd=' + aiUsd(sh.cost) + ', netMarginUsd=' + aiUsd(sh.margin) + ', marginPct=' + (sh.sales ? (sh.margin / sh.sales * 100).toFixed(1) : '0') + '%');
+  L.push('FORECAST (full outstanding snapshot, Ship By Date basis, no commission yet): netSalesUsd=' + aiUsd(fc.sales) + ', netCostUsd=' + aiUsd(fc.cost) + ', netMarginUsd=' + aiUsd(fc.margin));
+  if (AI_DOM) L.push('DOMESTIC (derived USD snapshot, MTC commission is EARNING not revenue): commissionUsd=' + aiUsd(AI_DOM.comm) + ', asOf=' + AI_DOM.asOf + '; domestic companies sales are NOT MTC revenue');
+  var totS = sh.sales + fc.sales + (AI_DOM ? AI_DOM.comm : 0), totC = sh.cost + fc.cost, totM = sh.margin + fc.margin + (AI_DOM ? AI_DOM.comm : 0);
+  L.push('TOTAL PERFORMANCE (Shipped + Forecast + Domestic commission): netSalesUsd=' + aiUsd(totS) + ', netCostUsd=' + aiUsd(totC) + ', netMarginUsd=' + aiUsd(totM) + ', marginPct=' + (totS ? (totM / totS * 100).toFixed(1) : '0') + '%');
+  if (monthly) L.push('MONTHLY SHIPPED NET SALES (USD): ' + monthly);
+  L.push('ALLOWED FILTER VALUES: Year=[' + AI_YEARS.join(', ') + '] Month=[' + AI_MONTHS.join(', ') + '] Country=[' + AI_COUNTRIES.join(', ') + '] Customer=[' + AI_CUSTS.slice(0, 40).join(', ') + '] Vendor=[' + AI_VENDS.slice(0, 40).join(', ') + ']');
+  L.push('ACTION PROPOSALS: when a filter or navigation would help, add up to 3 lines AT THE END, each exactly one of: FILTER Year=<value> / FILTER Month=<value> / FILTER Country=<value> / FILTER Customer=<value> / FILTER Vendor=<value> / Tab=<Dashboard|Data|Forecast Data|Domestic|Exchange Rate>. Values must be copied EXACTLY from ALLOWED FILTER VALUES - never invent. Lines render as buttons; nothing changes until the user clicks.');
+  return L.join('\\n').slice(0, 5800);
+}
+function aiParseActions(reply) {
+  var out = [], keep = [];
+  String(reply).split(/\\r?\\n/).forEach(function (line) {
+    var l = line.trim();
+    var m = l.match(/^FILTER\\s+(Year|Month|Country|Customer|Vendor)=(.+)$/);
+    var mt = l.match(/^Tab=(Dashboard|Data|Forecast Data|Domestic|Exchange Rate)$/);
+    var okv = false;
+    if (m) {
+      var k = m[1], v = m[2].trim();
+      okv = (k === 'Year') ? AI_YEARS.indexOf(v) >= 0 : (k === 'Month') ? AI_MONTHS.indexOf(v) >= 0 : (k === 'Country') ? AI_COUNTRIES.indexOf(v) >= 0 : (k === 'Customer') ? AI_CUSTS.indexOf(v) >= 0 : AI_VENDS.indexOf(v) >= 0;
+      if (okv && out.length < 3) out.push({ kind: 'filter', key: k, value: v }); else keep.push(line);
+    } else if (mt && out.length < 3) { out.push({ kind: 'tab', value: mt[1] }); }
+    else keep.push(line);
+  });
+  return { text: keep.join('\\n').trim(), actions: out };
+}
+function aiApplyAction(a) {
+  if (a.kind === 'filter') {
+    var f = {}; f[a.key] = [a.value];
+    pendingDrilldownFilters = f;
+    showSheet(0);
+  } else if (a.kind === 'tab') {
+    var idx = SHEETS.findIndex(function (s) { return s.name === a.value; });
+    if (idx >= 0) showSheet(idx);
+  }
+}
+function aiBubble(role, text, actions) {
+  var wrap = document.createElement('div');
+  wrap.className = 'ai-msg ' + role;
+  wrap.setAttribute('data-ai-exclude', '1');
+  var body = document.createElement('div');
+  body.textContent = text;
+  wrap.appendChild(body);
+  (actions || []).forEach(function (a) {
+    var chip = document.createElement('button');
+    chip.type = 'button'; chip.className = 'ai-chip';
+    var lbl = a.kind === 'filter' ? (a.key + ': ' + a.value) : ('Go: ' + a.value);
+    chip.textContent = t('aiApply') + ' ' + lbl;
+    chip.addEventListener('click', function () { try { aiApplyAction(a); chip.disabled = true; } catch (e) { chip.textContent = t('aiErrNet'); } });
+    wrap.appendChild(chip);
+  });
+  return wrap;
+}
+function aiStatusHtml() {
+  var s = document.getElementById('ai-status');
+  if (!s) return;
+  if (aiState.online === false) {
+    s.innerHTML = '<i class="ai-dot off"></i><span></span>';
+    s.lastElementChild.textContent = (aiState.mode === 'hosted' && aiState.lastError) ? aiState.lastError : t('aiOffline');
+    var i0 = document.getElementById('ai-input'); if (i0) i0.disabled = true;
+    var b0 = document.getElementById('ai-send'); if (b0) b0.disabled = true;
+  } else {
+    s.innerHTML = '<i class="ai-dot on"></i><span></span><span class="ai-quota"></span><button type="button" class="ai-clear"></button>';
+    s.children[1].textContent = t('aiOnline') + (aiState.mode === 'hosted' ? ' - Cloudflare' : ' - relay');
+    s.querySelector('.ai-clear').textContent = t('aiClear');
+    s.querySelector('.ai-clear').addEventListener('click', function () {
+      aiState.history = [];
+      var logEl = document.getElementById('ai-log');
+      logEl.innerHTML = '';
+      logEl.appendChild(aiBubble('sys', t('aiHello'), null));
+    });
+    var i1 = document.getElementById('ai-input'); if (i1) i1.disabled = aiState.busy;
+    var b1 = document.getElementById('ai-send'); if (b1) b1.disabled = aiState.busy;
+  }
+}
+function aiSend(message) {
+  var logEl = document.getElementById('ai-log');
+  logEl.appendChild(aiBubble('user', message, null));
+  var thinking = aiBubble('sys', t('aiThinking'), null);
+  logEl.appendChild(thinking);
+  logEl.scrollTop = logEl.scrollHeight;
+  aiState.busy = true;
+  var inp = document.getElementById('ai-input'), snd = document.getElementById('ai-send');
+  if (inp) inp.disabled = true; if (snd) snd.disabled = true;
+  var ctl = new AbortController();
+  setTimeout(function () { ctl.abort(); }, 90000);
+  var aiBase = aiState.mode === 'hosted' ? AI_HOSTED : AI_RELAY;
+  fetch(aiBase + '/chat', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, signal: ctl.signal,
+    body: JSON.stringify({ username: aiUser, message: message, history: aiState.history.slice(-12), context: aiContext() })
+  }).then(function (r) {
+    return r.json().catch(function () { return null; }).then(function (j) { return { ok: r.ok, j: j }; });
+  }).then(function (res) {
+    thinking.remove();
+    if (!res.ok || !res.j || res.j.ok !== true) {
+      logEl.appendChild(aiBubble('sys', '⚠ ' + ((res.j && res.j.error) || t('aiErrNet')), null));
+    } else {
+      var parsed = aiParseActions(res.j.reply);
+      var tail = parsed.text + (res.j.truncated ? ('\\n' + t('aiTrunc')) : '');
+      logEl.appendChild(aiBubble('bot', tail || '(empty)', parsed.actions));
+      aiState.history.push({ role: 'user', content: message.slice(0, 2000) });
+      aiState.history.push({ role: 'assistant', content: parsed.text.slice(0, 2000) });
+      if (aiState.history.length > 24) aiState.history.splice(0, aiState.history.length - 24);
+      var q = document.querySelector('.ai-quota');
+      if (q && res.j.quota) q.textContent = t('aiQuota').replace('{U}', Number(res.j.quota.used).toLocaleString('en-US')).replace('{C}', Number(res.j.quota.cap).toLocaleString('en-US'));
+      if (res.j.warn) logEl.appendChild(aiBubble('sys', '⚠ ' + res.j.warn, null));
+    }
+  }).catch(function () {
+    thinking.remove();
+    logEl.appendChild(aiBubble('sys', '⚠ ' + (aiState.mode === 'hosted' ? 'Cannot reach Cloudflare right now - your message was NOT sent. Check your connection and send again.' : t('aiErrNet')), null));
+    aiProbe().then(function (ok) { if (!ok) aiStatusHtml(); });
+  }).then(function () {
+    aiState.busy = false;
+    if (inp) inp.disabled = false; if (snd) snd.disabled = false;
+    logEl.scrollTop = logEl.scrollHeight;
+    if (inp) inp.focus();
+  });
+}
+function aiClose() {
+  var root = document.getElementById('ai-root');
+  if (root) root.innerHTML = '';
+  if (aiState.winResizeClamp) { window.removeEventListener('resize', aiState.winResizeClamp); aiState.winResizeClamp = null; }
+  var btn = document.getElementById('aiBtn'); if (btn) btn.focus();
+}
+function aiMakeDraggable(win) {
+  var head = win.querySelector('.ai-head');
+  var r0 = win.getBoundingClientRect();
+  win.style.right = 'auto'; win.style.bottom = 'auto';
+  win.style.left = r0.left + 'px'; win.style.top = r0.top + 'px';
+  function clamp() {
+    if (!win.isConnected) return;
+    var b = win.getBoundingClientRect();
+    var x = parseFloat(win.style.left), y = parseFloat(win.style.top);
+    if (isNaN(x)) x = b.left; if (isNaN(y)) y = b.top;
+    x = Math.min(Math.max(6, x), Math.max(6, window.innerWidth - b.width - 6));
+    y = Math.min(Math.max(6, y), Math.max(6, window.innerHeight - b.height - 6));
+    win.style.left = x + 'px'; win.style.top = y + 'px';
+  }
+  clamp();
+  head.addEventListener('pointerdown', function (e) {
+    if (e.button) return;
+    if (e.target.closest && e.target.closest('button')) return;
+    var b = win.getBoundingClientRect();
+    var dx = e.clientX - b.left, dy = e.clientY - b.top;
+    try { head.setPointerCapture(e.pointerId); } catch (err) {}
+    function mv(ev) { win.style.left = (ev.clientX - dx) + 'px'; win.style.top = (ev.clientY - dy) + 'px'; clamp(); }
+    function up(ev) { try { head.releasePointerCapture(ev.pointerId); } catch (err) {} head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); }
+    head.addEventListener('pointermove', mv);
+    head.addEventListener('pointerup', up);
+    head.addEventListener('pointercancel', up);
+    e.preventDefault();
+  });
+  window.addEventListener('resize', clamp);
+  aiState.winResizeClamp = clamp;
+}
+function aiOpen() {
+  if (aiState.winResizeClamp) { window.removeEventListener('resize', aiState.winResizeClamp); aiState.winResizeClamp = null; }
+  var root = document.getElementById('ai-root');
+  root.innerHTML = '<aside class="ai-win" role="dialog" aria-labelledby="ai-title">'
+    + '<header class="ai-head" title="Drag to move / 拖曳移動"><span class="ai-grip">⠿</span><h3 id="ai-title">' + t('aiTitle') + '</h3><button type="button" class="ai-x" id="ai-close" aria-label="close">✕</button></header>'
+    + '<div class="ai-status" id="ai-status"></div>'
+    + '<div class="ai-log" id="ai-log"></div>'
+    + '<p class="ai-disclose">' + t('aiDisclose') + '</p>'
+    + '<form class="ai-compose" id="ai-form"><input id="ai-input" type="text" maxlength="4000"/><button class="ai-send" id="ai-send" type="submit"></button></form>'
+    + '<footer class="ai-userbar"><span id="ai-namelbl"></span><input id="ai-user" maxlength="40"/></footer>'
+    + '</aside>';
+  root.querySelector('#ai-input').placeholder = t('aiPh');
+  root.querySelector('#ai-send').textContent = t('aiSend');
+  root.querySelector('#ai-namelbl').textContent = t('aiName');
+  root.querySelector('#ai-user').value = aiUser;
+  aiStatusHtml();
+  document.getElementById('ai-log').appendChild(aiBubble('sys', t('aiHello'), null));
+  document.getElementById('ai-close').addEventListener('click', aiClose);
+  aiMakeDraggable(root.querySelector('.ai-win'));
+  document.getElementById('ai-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = document.getElementById('ai-input').value.trim();
+    if (!v || aiState.busy) return;
+    document.getElementById('ai-input').value = '';
+    aiSend(v);
+  });
+  document.getElementById('ai-user').addEventListener('change', function () {
+    aiUser = this.value.trim() || 'MTC-report';
+    try { localStorage.setItem('mtc-ai-user', aiUser); } catch (e) {}
+  });
+  aiProbe().then(function () { aiStatusHtml(); });
+  var inp = document.getElementById('ai-input');
+  if (aiState.online !== false && inp) inp.focus();
+}
+(function aiInit() {
+  var st = document.createElement('style');
+  st.id = 'ai-css';
+  st.textContent = '#aiBtn{position:fixed;right:18px;bottom:18px;z-index:60;background:var(--shell-accent);color:#fff;border:0;border-radius:20px;padding:9px 16px;font-size:13px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.25);}#aiBtn:hover{filter:brightness(1.12);}'
+    + '.ai-win{position:fixed;right:16px;bottom:64px;width:390px;max-width:92vw;height:min(560px,84vh);background:var(--shell-card);color:var(--shell-text);display:flex;flex-direction:column;border:1px solid var(--shell-rule);border-radius:10px;box-shadow:0 12px 36px rgba(5,28,44,.35);z-index:70;overflow:hidden;}'
+    + '.ai-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--shell-rule);cursor:move;user-select:none;-webkit-user-select:none;touch-action:none;background:var(--shell-card);flex:none;}'
+    + '.ai-grip{color:var(--shell-muted);font-size:14px;flex:none;}'
+    + '.ai-head h3{flex:1;margin:0;font-size:15px;font-family:Georgia,serif;}'
+    + '.ai-x{background:none;border:0;font-size:17px;cursor:pointer;color:var(--shell-muted);}'
+    + '.ai-status{padding:6px 14px;font-size:11px;color:var(--shell-muted);display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--shell-rule);}'
+    + '.ai-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none;}'
+    + '.ai-dot.on{background:#1c7a63;}.ai-dot.off{background:#A63D40;}'
+    + '.ai-quota{margin-left:auto;}'
+    + '.ai-clear{background:none;border:1px solid var(--shell-rule);border-radius:3px;color:var(--shell-muted);font-size:10.5px;padding:3px 8px;cursor:pointer;}'
+    + '.ai-log{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;}'
+    + '.ai-msg{max-width:92%;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.45;white-space:pre-wrap;}'
+    + '.ai-msg.user{align-self:flex-end;background:var(--shell-accent);color:#fff;}'
+    + '.ai-msg.bot{align-self:flex-start;background:var(--shell-card);border:1px solid var(--shell-rule);}'
+    + '.ai-msg.sys{align-self:center;color:var(--shell-muted);font-size:11px;}'
+    + '.ai-chip{display:inline-block;margin:6px 6px 0 0;background:var(--shell-card);border:1px solid var(--shell-accent);color:var(--shell-accent);border-radius:14px;padding:4px 10px;font-size:11.5px;cursor:pointer;}'
+    + '.ai-chip:disabled{opacity:.5;cursor:default;border-color:var(--shell-rule);}'
+    + '.ai-disclose{margin:0;padding:8px 14px;font-size:10.5px;color:var(--shell-muted);border-top:1px solid var(--shell-rule);}'
+    + '.ai-compose{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--shell-rule);}'
+    + '.ai-compose input{flex:1;padding:8px 10px;border:1px solid var(--shell-rule);border-radius:4px;background:var(--shell-card);color:var(--shell-text);font-size:12.5px;}'
+    + '.ai-send{background:var(--shell-accent);color:#fff;border:0;border-radius:4px;padding:8px 14px;cursor:pointer;font-size:12.5px;}'
+    + '.ai-userbar{display:flex;gap:8px;align-items:center;padding:6px 14px;font-size:11px;color:var(--shell-muted);border-top:1px solid var(--shell-rule);}'
+    + '.ai-userbar input{flex:1;padding:4px 6px;border:1px solid var(--shell-rule);border-radius:3px;background:var(--shell-card);color:var(--shell-text);font-size:11px;}';
+  document.head.appendChild(st);
+  var btn = document.createElement('button');
+  btn.id = 'aiBtn'; btn.type = 'button';
+  btn.setAttribute('data-ai-exclude', '1');
+  var sp = document.createElement('span');
+  sp.setAttribute('data-i18n', 'aiBtn');
+  sp.textContent = 'Ask AI';
+  btn.textContent = '✦ ';
+  btn.appendChild(sp);
+  document.body.appendChild(btn);
+  var root = document.createElement('div');
+  root.id = 'ai-root';
+  root.setAttribute('data-ai-exclude', '1');
+  document.body.appendChild(root);
+  btn.addEventListener('click', function () { if (root.firstChild) aiClose(); else aiOpen(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && root.firstChild) aiClose(); });
+})();
 </script>
 </body>
 </html>`;
