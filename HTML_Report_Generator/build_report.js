@@ -3857,6 +3857,14 @@ const sheetsData = [
 // that only exists in the Purchase report, so they no-op here (silently -
 // the handler checks for the parent function first). Missing source file
 // only warns, so a Sales-only rebuild never fails because of it.
+//
+// Forecast subtotal purchase cost is NOT in that Purchase page. Forecast
+// Prime_USD lives only here (forecast_sheet.json: outstanding orders,
+// Epidueqty, Ship By Date, no commission). injectForecastPurchaseColumn()
+// joins it onto the embedded GROUPS after the verbatim copy. A later
+// verbatim re-embed must keep this call — dropping it removes the column.
+// It does not recompute 2025/2026 actuals or pctChange.
+const { injectForecastPurchaseColumn, PURCHASE_YTD_SOURCE_FOOT } = require('./purchase_ytd_forecast.js');
 const PURCHASE_HTML_PATH = 'C:\\Users\\User\\Desktop\\MTC Purchase Report Claude\\FIN_MTC_Purchase_Report_html_TEMP_RV1.html';
 function extractPurchaseYtdTab() {
   if (!fs.existsSync(PURCHASE_HTML_PATH)) {
@@ -3872,13 +3880,21 @@ function extractPurchaseYtdTab() {
   const sheets = JSON.parse(html.slice(start + anchor.length, jsonEnd).replace(/<\\\/script/gi, '</script'));
   const tab = sheets.find(s => s.key === 'purchaseYtd');
   if (!tab) throw new Error('Purchase report HTML has no "purchaseYtd" tab');
+  const forecastJoin = injectForecastPurchaseColumn(tab.html, forecastSheet);
+  if (forecastJoin.injected) {
+    console.log('Purchase YTD forecast column: Prime_USD ' + forecastJoin.total.toFixed(2)
+      + ' on ' + forecastJoin.groupCount + ' grouped vendors (' + forecastJoin.buckets + ' forecast name/country rows). Unmatched '
+      + forecastJoin.unmatchedCount + ' (' + forecastJoin.unmatchedAmount.toFixed(2) + ')'
+      + (forecastJoin.unmatchedNames.length ? ': ' + forecastJoin.unmatchedNames.join('; ') : ''));
+  } else {
+    console.warn('WARNING: ' + forecastJoin.reason + ' - Purchase YTD embedded without the forecast subtotal column');
+  }
   // Restyle-stage rule: every tab closes with a source line. This page belongs
-  // to the Purchase project (we must not restyle its internals), so the only
-  // edit is appending a self-styled footer before its own </body> - inline
-  // styles because we cannot assume its document carries our CSS tokens.
-  const foot = '<div style="margin:18px 8px 6px;padding:8px 0 0;border-top:1px solid rgba(128,128,128,.4);font:10.5px/1.55 Calibri,Arial,sans-serif;color:rgba(128,128,128,.95)">Sources / 資料來源: FIN_MTC Purchase Report html (MTC Purchase Report Claude project, embedded as-built) — see that report for its period &amp; FX basis · 期間與匯率基礎詳該採購報表。</div>';
-  const bodyEnd = tab.html.lastIndexOf('</body>');
-  const patchedHtml = bodyEnd >= 0 ? tab.html.slice(0, bodyEnd) + foot + tab.html.slice(bodyEnd) : tab.html;
+  // to the Purchase project (we must not restyle its internals). The forecast
+  // column above is the one allowed injection; the footer is the other edit.
+  // Inline styles because we cannot assume its document carries our CSS tokens.
+  const bodyEnd = forecastJoin.html.lastIndexOf('</body>');
+  const patchedHtml = bodyEnd >= 0 ? forecastJoin.html.slice(0, bodyEnd) + PURCHASE_YTD_SOURCE_FOOT + forecastJoin.html.slice(bodyEnd) : forecastJoin.html;
   return { key: 'purchaseYtdVendor', name: 'Purchase: YTD by Vendor', html: patchedHtml };
 }
 const purchaseYtdTab = extractPurchaseYtdTab();
