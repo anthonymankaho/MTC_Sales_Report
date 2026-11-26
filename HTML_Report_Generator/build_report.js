@@ -504,7 +504,7 @@ body[data-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_butto
 .section-filter .sf-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); cursor: pointer; }
 .section-filter .sf-note { font-size: 11px; color: var(--text-muted); }
 .kpi-row-label { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: 10px 0 6px; border-left: 3px solid var(--accent); padding-left: 8px; }
-.kpi-row-context { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-muted); opacity: .85; }
+.kpi-row-context { font-size: 14px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--text); opacity: 1; }
 .kpis-total .kpi { border-bottom: 2px solid var(--accent); background: var(--hover-bg); }
 .kpis-forecast .kpi { border-bottom: 2px dashed var(--accent); }
 .kpi { background: var(--card-bg); padding: 16px 24px; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); flex: 1; min-width: 180px; }
