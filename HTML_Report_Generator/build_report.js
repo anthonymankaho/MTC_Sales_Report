@@ -288,6 +288,9 @@ var I18N = {
     kpiForecastNote: 'Forecast: Net Sales = Sales USD, Net Cost = Prime USD, Net Margin = Gross Cont (no commission yet).',
     kpiDomesticNote: 'Domestic: derived USD snapshot; MTC commission is earning (gain), not cost.',
     sfNote: '(affects the Total Performance row only)', domMarginNote: 'MTC commission (earning)',
+    ctxAllCust: 'All customers', ctxAllVend: 'All vendors', ctxAllCountry: 'All countries',
+    ctxCustWord: 'customers', ctxVendWord: 'vendors', ctxCountryWord: 'countries',
+    ctxDomestic: '2026 snapshot', ctxForecast: 'Outstanding orders',
     introExRate: 'The Platinum Buy Rate table used to convert every foreign-currency figure in this report to USD.',
     introYoyCustomers: '2026 vs 2025 by customer, with a Total Index above the table - click any name, country or number to see the transactions behind it.',
     introYoyFabrication: 'The same year-over-year comparison as the Customers tab, grouped by Fabrication Code.',
@@ -359,6 +362,9 @@ ${ACTION_EN_JS}
     kpiForecastNote: '預測:Net銷售 = Sales USD、Net成本 = Prime USD、Net毛利 = Gross Cont(尚未有佣金)。',
     kpiDomesticNote: '國內:推算 USD 快照;MTC 佣金係收入(gain),唔係成本。',
     sfNote: '(只影響總體表現列)', domMarginNote: 'MTC 佣金(收入)',
+    ctxAllCust: '所有客戶', ctxAllVend: '所有供應商', ctxAllCountry: '所有國家',
+    ctxCustWord: '個客戶', ctxVendWord: '個供應商', ctxCountryWord: '個國家',
+    ctxDomestic: '2026 快照', ctxForecast: '未出貨訂單',
     introExRate: '用於將本報表所有外幣數字換算為 USD 的白金買入匯率表。',
     introYoyCustomers: '依客戶呈現 2026 對比 2025，表格上方附總計指標 — 點擊任何名稱、國家或數字可查看其背後的交易明細。',
     introYoyFabrication: '與客戶頁籤相同的年度比較邏輯，改依加工代碼分組。',
@@ -497,7 +503,8 @@ body[data-theme="dark"] .dataTables_wrapper .dataTables_paginate .paginate_butto
 .section-filter .sf-label { font-size: 12px; font-weight: 700; color: var(--text); }
 .section-filter .sf-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); cursor: pointer; }
 .section-filter .sf-note { font-size: 11px; color: var(--text-muted); }
-.kpi-row-label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: 10px 0 6px; border-left: 3px solid var(--accent); padding-left: 8px; }
+.kpi-row-label { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: 10px 0 6px; border-left: 3px solid var(--accent); padding-left: 8px; }
+.kpi-row-context { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-muted); opacity: .85; }
 .kpis-total .kpi { border-bottom: 2px solid var(--accent); background: var(--hover-bg); }
 .kpis-forecast .kpi { border-bottom: 2px dashed var(--accent); }
 .kpi { background: var(--card-bg); padding: 16px 24px; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); flex: 1; min-width: 180px; }
@@ -1824,26 +1831,26 @@ ${MCKINSEY_CSS}
   <label class="sf-opt"><input type="checkbox" id="sec-domestic" checked><span data-i18n="secDomestic">Domestic</span></label>
   <span class="sf-note" data-i18n="sfNote">(affects the Total Performance row only)</span>
 </div>
-<div class="kpi-row-label" data-i18n="rowTotal">Total Performance</div>
+<div class="kpi-row-label"><span data-i18n="rowTotal">Total Performance</span><span class="kpi-row-context" id="ctx-total"></span></div>
 <div class="kpis kpis-total">
   <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="total-sales">-</div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="total-cost">-</div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="total-margin">-</div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMarginPct">Net Margin %</div><div class="value" id="total-marginpct">-</div></div>
 </div>
-<div class="kpi-row-label" data-i18n="rowShipped">Shipped</div>
+<div class="kpi-row-label"><span data-i18n="rowShipped">Shipped</span><span class="kpi-row-context" id="ctx-shipped"></span></div>
 <div class="kpis">
   <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="kpi-sales">-</div><div class="kpi-sub"><span id="kpi-sales-prior">-</span><span class="kpi-delta" id="kpi-sales-delta"></span></div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="kpi-cost">-</div><div class="kpi-sub"><span id="kpi-cost-prior">-</span><span class="kpi-delta" id="kpi-cost-delta"></span></div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="kpi-margin">-</div><div class="kpi-sub"><span id="kpi-margin-prior">-</span><span class="kpi-delta" id="kpi-margin-delta"></span></div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMarginPct">Net Margin %</div><div class="value" id="kpi-marginpct">-</div><div class="kpi-sub"><span id="kpi-marginpct-prior">-</span><span class="kpi-delta" id="kpi-marginpct-delta"></span></div></div>
 </div>
-<div class="kpi-row-label" data-i18n="rowDomestic">Domestic</div>
+<div class="kpi-row-label"><span data-i18n="rowDomestic">Domestic</span><span class="kpi-row-context" id="ctx-domestic"></span></div>
 <div class="kpis kpis-dom">
   <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomCommission">Domestic MTC Commission (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-comm">-</div><div class="kpi-sub"><span data-i18n="domBasis">2026 total</span> · <span data-i18n="domAsOf">snapshot as of</span> <span id="dom-asof">-</span></div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="dom-margin">-</div><div class="kpi-sub" data-i18n="domMarginNote">MTC commission (earning)</div></div>
 </div>
-<div class="kpi-row-label" data-i18n="rowForecast">Forecast</div>
+<div class="kpi-row-label"><span data-i18n="rowForecast">Forecast</span><span class="kpi-row-context" id="ctx-forecast"></span></div>
 <div class="kpis kpis-forecast">
   <div class="kpi"><div class="label" data-i18n="kpiNetSales">Net Sales (USD)</div><div class="value" id="fc-sales">-</div></div>
   <div class="kpi"><div class="label" data-i18n="kpiNetCost">Net Cost (USD)</div><div class="value" id="fc-cost">-</div></div>
@@ -2188,6 +2195,38 @@ function renderSectionKpis() {
   // commission adds to Total Net Sales and Net Margin, never to cost (user 11-26).
   if (incD) { ts += dom.comm; tc += 0; tm += dom.comm; }
   setKpi('total', ts, tc, tm);
+}
+// ---- Per-row filter context (Peggy 2026-11-26): a short line above each index
+// row stating the period + customer/vendor/country selection, grammar-clean.
+// Total/Shipped read the live filters; Domestic/Forecast are snapshots.
+var MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function mLabel(m) { var p = String(m).split('-'); return MONTH_ABBR[parseInt(p[1], 10) - 1] + ' ' + p[0]; }
+function mShort(m) { var p = String(m).split('-'); return MONTH_ABBR[parseInt(p[1], 10) - 1]; }
+function periodLabel(months) {
+  if (!months.length) return '—';
+  var a = months[0], b = months[months.length - 1];
+  if (a === b) return mLabel(a);
+  var pa = a.split('-'), pb = b.split('-');
+  if (pa[0] === pb[0]) return mShort(a) + '–' + mShort(b) + ' ' + pa[0];
+  return mLabel(a) + '–' + mLabel(b);
+}
+function ctxSel(sel, allKey, wordKey) {
+  if (!sel || !sel.length) return t(allKey);
+  if (sel.length === 1) return sel[0];
+  return sel.length + ' ' + t(wordKey);
+}
+function renderRowContext() {
+  var months = Array.from(new Set(lastRows.map(function (r) { return r[1]; }))).filter(Boolean).sort();
+  var ctx = periodLabel(months) + ' · ' + ctxSel(msCust.getSelected(), 'ctxAllCust', 'ctxCustWord') +
+    ' · ' + ctxSel(msVend.getSelected(), 'ctxAllVend', 'ctxVendWord') +
+    ' · ' + ctxSel(msCountry.getSelected(), 'ctxAllCountry', 'ctxCountryWord');
+  var ct = document.getElementById('ctx-total'); if (ct) ct.textContent = ctx;
+  var cs = document.getElementById('ctx-shipped'); if (cs) cs.textContent = ctx;
+  var cd = document.getElementById('ctx-domestic');
+  if (cd) cd.textContent = DOM_MEMO ? (t('ctxDomestic') + ' · ' + t('domAsOf') + ' ' + DOM_MEMO.asOf) : t('ctxDomestic');
+  var fmonths = Array.from(new Set(FROWS.map(function (r) { return r[1]; }))).filter(Boolean).sort();
+  var cf = document.getElementById('ctx-forecast');
+  if (cf) cf.textContent = t('ctxForecast') + ' · Ship By Date ' + periodLabel(fmonths);
 }
 ['sec-shipped', 'sec-forecast', 'sec-domestic'].forEach(function (id) {
   var el = document.getElementById(id);
@@ -2542,6 +2581,7 @@ function render() {
   lastRows = getFiltered();
   renderKpis();
   renderSectionKpis();
+  renderRowContext();
   renderAction();
   renderSalesCostTrend();
   renderMarginTrend();
