@@ -1840,9 +1840,8 @@ ${MCKINSEY_CSS}
 </div>
 <div class="kpi-row-label" data-i18n="rowDomestic">Domestic</div>
 <div class="kpis kpis-dom">
-  <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomSales">Domestic Net Sales (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-sales">-</div><div class="kpi-sub"><span data-i18n="domBasis">2026 total</span> · <span data-i18n="domAsOf">snapshot as of</span> <span id="dom-asof">-</span></div></div>
-  <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomCommission">Domestic MTC Commission (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-comm">-</div><div class="kpi-sub" data-i18n="kpiDomesticNote">MTC commission is earning (gain), not cost.</div></div>
-  <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="dom-margin">-</div><div class="kpi-sub" data-i18n="domMarginNote">Sales + commission earning</div></div>
+  <div class="kpi kpi-dom-card" role="button" tabindex="0"><div class="label"><span data-i18n="kpiDomCommission">Domestic MTC Commission (USD, derived)</span><sup class="dom-memo-sup">†</sup></div><div class="value" id="dom-comm">-</div><div class="kpi-sub"><span data-i18n="domBasis">2026 total</span> · <span data-i18n="domAsOf">snapshot as of</span> <span id="dom-asof">-</span></div></div>
+  <div class="kpi"><div class="label" data-i18n="kpiNetMargin">Net Margin (USD)</div><div class="value" id="dom-margin">-</div><div class="kpi-sub" data-i18n="domMarginNote">MTC commission (earning)</div></div>
 </div>
 <div class="kpi-row-label" data-i18n="rowForecast">Forecast</div>
 <div class="kpis kpis-forecast">
@@ -2175,7 +2174,6 @@ function renderSectionKpis() {
   // Domestic snapshot), so Total Performance reflects the whole commitment.
   var fc = sumRows(FROWS);
   var dom = DOM_MEMO ? { sales: DOM_MEMO.sales || 0, comm: DOM_MEMO.comm || 0 } : { sales: 0, comm: 0 };
-  var ds = document.getElementById('dom-sales'); if (ds) ds.textContent = DOM_MEMO ? fmt(dom.sales) : '-';
   var dc = document.getElementById('dom-comm'); if (dc) dc.textContent = DOM_MEMO ? fmt(dom.comm) : '-';
   var dm = document.getElementById('dom-margin'); if (dm) dm.textContent = DOM_MEMO ? fmt(dom.comm) : '-';
   var da = document.getElementById('dom-asof'); if (da && DOM_MEMO) da.textContent = DOM_MEMO.asOf || '-';
@@ -2186,7 +2184,9 @@ function renderSectionKpis() {
   var ts = 0, tc = 0, tm = 0;
   if (incS) { ts += shipped.sales; tc += shipped.cost; tm += shipped.margin; }
   if (incF) { ts += fc.sales; tc += fc.cost; tm += fc.margin; }
-  if (incD) { ts += dom.sales; tc += 0; tm += dom.comm; }
+  // Domestic = MTC commission EARNING only (not the domestic companies' revenue):
+  // commission adds to Total Net Sales and Net Margin, never to cost (user 11-26).
+  if (incD) { ts += dom.comm; tc += 0; tm += dom.comm; }
   setKpi('total', ts, tc, tm);
 }
 ['sec-shipped', 'sec-forecast', 'sec-domestic'].forEach(function (id) {
