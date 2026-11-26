@@ -1,31 +1,39 @@
 'use strict';
 
-// Forecast subtotal purchase cost for the embedded "Purchase: YTD by Vendor"
+// Forecast cost and total cost for the embedded "Purchase: YTD by Vendor"
 // page. The Purchase Report project has no forecast pipeline, so this join
 // runs in extractPurchaseYtdTab() when that page is copied in. A later
-// verbatim re-embed must keep the call — without it the column disappears.
+// verbatim re-embed must keep the call — without it the columns disappear.
 //
-// Basis (already applied in forecast_sheet.json / the Forecast Data tab):
-// outstanding orders only (COMPLETED/CANCELLED excluded), valued at unshipped
-// qty (Epidueqty), bucketed by Ship By Date. Amount = Prime_USD. Forecast has
-// no commission, so this column is never added into the 2025/2026 PO Price
-// w/comm columns and pctChange is not recomputed.
+// Forecast cost basis (already applied in forecast_sheet.json / the Forecast
+// Data tab): outstanding orders only (COMPLETED/CANCELLED excluded), valued
+// at unshipped qty (Epidueqty), bucketed by Ship By Date. Amount = Prime_USD.
+// Forecast has no commission, so it is never added into the 2025/2026 PO
+// Price w/comm columns and pctChange is not recomputed.
+// Total cost = 2026 PO Price w/comm USD + forecast cost. A row with no 2026
+// actual shows the forecast amount alone.
 
 const COPY = {
   en: {
-    colForecastUsd: 'Subtotal USD',
-    colForecastNote: 'Forecast subtotal purchase cost USD. Outstanding orders only (excludes COMPLETED/CANCELLED), valued at unshipped qty (Epidueqty), bucketed by Ship By Date. Purchase cost = Prime_USD. No commission yet - this column is not part of the 2025/2026 PO Price w/comm totals and is not in the % change.',
+    colForecastUsd: 'Forecast cost USD',
+    colTotalCost: 'Total cost USD',
+    colTotalCostNote: '2026 total PO Price w/comm USD plus forecast cost USD. Forecast has no commission yet and is not inside the 2026 column or the % change.',
+    colForecastNote: 'Forecast purchase cost USD. Outstanding orders only (excludes COMPLETED/CANCELLED), valued at unshipped qty (Epidueqty), bucketed by Ship By Date. Purchase cost = Prime_USD. No commission yet - this column is not part of the 2025/2026 PO Price w/comm totals and is not in the % change.',
     totalLabel: 'Total',
-    summaryForecast: 'Subtotal',
+    summaryForecast: 'Forecast cost',
+    summaryTotalCost: 'Total cost',
     forecastUnmatchedTag: 'unmatched forecast',
     forecastUnmatchedFoot: '{n} forecast vendor name(s) did not match a YTD vendor ({amt}). Listed on their own rows and included in the total.',
     forecastAllMatched: 'Every forecast vendor name matched a YTD vendor.'
   },
   zh: {
-    colForecastUsd: '小計 USD',
-    colForecastNote: '預測採購成本小計 USD。僅未完成訂單（不含 COMPLETED／CANCELLED），以未出貨數量（Epidueqty）計價，按 Ship By Date 分桶。採購成本 = Prime_USD，尚未含佣金，故本欄不併入 2025／2026 含佣金採購總額，亦不計入變動百分比。',
+    colForecastUsd: '預測成本 USD',
+    colTotalCost: '總成本 USD',
+    colTotalCostNote: '2026年採購總額（含佣金）USD 加上預測成本 USD。預測尚未含佣金，不併入 2026 欄，亦不計入變動百分比。',
+    colForecastNote: '預測採購成本 USD。僅未完成訂單（不含 COMPLETED／CANCELLED），以未出貨數量（Epidueqty）計價，按 Ship By Date 分桶。採購成本 = Prime_USD，尚未含佣金，故本欄不併入 2025／2026 含佣金採購總額，亦不計入變動百分比。',
     totalLabel: '合計',
-    summaryForecast: '小計',
+    summaryForecast: '預測成本',
+    summaryTotalCost: '總成本',
     forecastUnmatchedTag: '未對上預測',
     forecastUnmatchedFoot: '{n} 個預測供應商名稱未能對上年度供應商（{amt}）。已另列並計入合計。',
     forecastAllMatched: '所有預測供應商名稱均已對上年度供應商。'
@@ -257,9 +265,12 @@ function i18nPairs(lang) {
   const copy = COPY[lang];
   return [
     'colForecastUsd: ' + jsString(copy.colForecastUsd),
+    'colTotalCost: ' + jsString(copy.colTotalCost),
+    'colTotalCostNote: ' + jsString(copy.colTotalCostNote),
     'colForecastNote: ' + jsString(copy.colForecastNote),
     'totalLabel: ' + jsString(copy.totalLabel),
     'summaryForecast: ' + jsString(copy.summaryForecast),
+    'summaryTotalCost: ' + jsString(copy.summaryTotalCost),
     'forecastUnmatchedTag: ' + jsString(copy.forecastUnmatchedTag),
     'forecastUnmatchedFoot: ' + jsString(copy.forecastUnmatchedFoot),
     'forecastAllMatched: ' + jsString(copy.forecastAllMatched)
@@ -268,7 +279,7 @@ function i18nPairs(lang) {
 
 // Appended by extractPurchaseYtdTab after the column injection. Kept here so
 // a rebuild of an already-embedded page uses the same source line.
-const PURCHASE_YTD_SOURCE_FOOT = '<div style="margin:18px 8px 6px;padding:8px 0 0;border-top:1px solid rgba(128,128,128,.4);font:10.5px/1.55 Calibri,Arial,sans-serif;color:rgba(128,128,128,.95)">Sources / 資料來源: FIN_MTC Purchase Report html (MTC Purchase Report Claude project, embedded as-built) — see that report for its period &amp; FX basis · 期間與匯率基礎詳該採購報表。 Forecast subtotal purchase cost USD is injected at embed from forecast_sheet.json (Prime_USD, outstanding / Ship By Date, no commission) and is not in that Purchase report. · 預測採購成本小計於嵌入時由 forecast_sheet.json 注入（Prime_USD、未完成訂單、Ship By Date、尚未含佣金），並非該採購報表欄位。</div>';
+const PURCHASE_YTD_SOURCE_FOOT = '<div style="margin:18px 8px 6px;padding:8px 0 0;border-top:1px solid rgba(128,128,128,.4);font:10.5px/1.55 Calibri,Arial,sans-serif;color:rgba(128,128,128,.95)">Sources / 資料來源: FIN_MTC Purchase Report html (MTC Purchase Report Claude project, embedded as-built) — see that report for its period &amp; FX basis · 期間與匯率基礎詳該採購報表。 Forecast cost USD is injected at embed from forecast_sheet.json (Prime_USD, outstanding / Ship By Date, no commission) and is not in that Purchase report. Total cost USD is 2026 PO Price w/comm plus that forecast cost. · 預測成本於嵌入時由 forecast_sheet.json 注入（Prime_USD、未完成訂單、Ship By Date、尚未含佣金），並非該採購報表欄位。總成本為 2026 含佣金採購總額加上該預測成本。</div>';
 
 function insertForecastNote(html) {
   if (html.indexOf('id="forecastBasisNote"') >= 0) return html;
@@ -344,7 +355,7 @@ function injectForecastPurchaseColumn(tabHtml, forecastSheet) {
   html = mustReplace(
     html,
     '<th data-col="pctChange" data-i18n="colPctChange">2025 vs 2026 PO Cost % Change</th>',
-    '<th data-col="pctChange" data-i18n="colPctChange">2025 vs 2026 PO Cost % Change</th>\n    <th data-col="forecastUsd" data-i18n="colForecastUsd" data-i18n-title="colForecastNote" title="' + COPY.en.colForecastNote.replace(/"/g, '&quot;') + '">' + COPY.en.colForecastUsd + '</th>',
+    '<th data-col="pctChange" data-i18n="colPctChange">2025 vs 2026 PO Cost % Change</th>\n    <th data-col="forecastUsd" data-i18n="colForecastUsd" data-i18n-title="colForecastNote" title="' + COPY.en.colForecastNote.replace(/"/g, '&quot;') + '">' + COPY.en.colForecastUsd + '</th>\n    <th data-col="totalCost" data-i18n="colTotalCost" data-i18n-title="colTotalCostNote" title="' + COPY.en.colTotalCostNote.replace(/"/g, '&quot;') + '">' + COPY.en.colTotalCost + '</th>',
     'forecast column header'
   );
   html = mustReplace(
@@ -361,8 +372,8 @@ function injectForecastPurchaseColumn(tabHtml, forecastSheet) {
   );
   html = mustReplace(
     html,
-    "[['usd2025', fmtUsd], ['usd2026', fmtUsd], ['pctChange', fmtPctChange]].forEach(function (pair) {",
-    "[['usd2025', fmtUsd], ['usd2026', fmtUsd], ['pctChange', fmtPctChange], ['forecastUsd', fmtUsd]].forEach(function (pair) {",
+    "[['usd2025', fmtUsd], ['usd2026', fmtUsd], ['pctChange', fmtPctChange]].forEach(function (pair) {\n    var td = document.createElement('td');\n    td.textContent = pair[1](rowData[pair[0]]);",
+    "var cells = { usd2025: rowData.usd2025, usd2026: rowData.usd2026, pctChange: rowData.pctChange, forecastUsd: rowData.forecastUsd, totalCost: totalCostOf(rowData) };\n  [['usd2025', fmtUsd], ['usd2026', fmtUsd], ['pctChange', fmtPctChange], ['forecastUsd', fmtUsd], ['totalCost', fmtUsd]].forEach(function (pair) {\n    var td = document.createElement('td');\n    td.textContent = pair[1](cells[pair[0]]);",
     'numeric cells'
   );
   html = mustReplace(
@@ -373,7 +384,19 @@ function injectForecastPurchaseColumn(tabHtml, forecastSheet) {
   );
   html = mustReplace(
     html,
+    "    if (sortCol === 'vendor') { av = a.vendor; bv = b.vendor; return av.localeCompare(bv) * sortDir; }\n    av = a[sortCol]; bv = b[sortCol];",
+    "    if (sortCol === 'vendor') { av = a.vendor; bv = b.vendor; return av.localeCompare(bv) * sortDir; }\n    av = sortCol === 'totalCost' ? totalCostOf(a) : a[sortCol]; bv = sortCol === 'totalCost' ? totalCostOf(b) : b[sortCol];",
+    'total cost sort'
+  );
+  html = mustReplace(
+    html,
     "function render() {",
+    "function totalCostOf(row) {\n" +
+    "  var hasActual = typeof row.usd2026 === 'number' && !isNaN(row.usd2026);\n" +
+    "  var forecast = (typeof row.forecastUsd === 'number' && !isNaN(row.forecastUsd)) ? row.forecastUsd : 0;\n" +
+    "  if (!hasActual && !forecast) return null;\n" +
+    "  return (hasActual ? row.usd2026 : 0) + forecast;\n" +
+    "}\n" +
     "function forecastColumnTotal(groups) {\n" +
     "  var tot25 = 0, tot26 = 0, totFc = 0, any25 = false, any26 = false;\n" +
     "  groups.forEach(function (g) {\n" +
@@ -383,7 +406,7 @@ function injectForecastPurchaseColumn(tabHtml, forecastSheet) {
     "  });\n" +
     "  // Same rule as the Purchase page hierarchy: a zero 2025 base is N/A when 2026 is non-zero, else 0.\n" +
     "  var pct = !any25 && !any26 ? null : (!tot25 ? (tot26 ? null : 0) : (tot26 - tot25) / tot25 * 100);\n" +
-    "  return { usd2025: any25 ? tot25 : null, usd2026: any26 ? tot26 : null, pctChange: pct, forecastUsd: totFc };\n" +
+    "  return { usd2025: any25 ? tot25 : null, usd2026: any26 ? tot26 : null, pctChange: pct, forecastUsd: totFc, totalCost: totalCostOf({ usd2026: any26 ? tot26 : null, forecastUsd: totFc }) };\n" +
     "}\n" +
     "function vendorRowLabel(g) {\n" +
     "  return g.forecastOnly ? (g.vendor + ' (' + t('forecastUnmatchedTag') + ')') : g.vendor;\n" +
@@ -410,38 +433,38 @@ function injectForecastPurchaseColumn(tabHtml, forecastSheet) {
     "      ? t('forecastUnmatchedFoot').replace('{n}', unmatched.length.toLocaleString()).replace('{amt}', fmtUsd(uAmt))\n" +
     "      : t('forecastAllMatched'));\n" +
     "  }\n" +
-    "  if (sb) sb.textContent = t(sb.dataset.titleKey || '') + ' - ' + groups.length.toLocaleString() + ' ' + t('rowsSuffix') + ' · ' + t('summaryForecast') + ' ' + fmtUsd(tot.forecastUsd);",
+    "  if (sb) sb.textContent = t(sb.dataset.titleKey || '') + ' - ' + groups.length.toLocaleString() + ' ' + t('rowsSuffix') + ' · ' + t('summaryForecast') + ' ' + fmtUsd(tot.forecastUsd) + ' · ' + t('summaryTotalCost') + ' ' + fmtUsd(tot.totalCost);",
     'summary and total row'
   );
   html = mustReplace(
     html,
     "  var header = [t('colIndividualVendorName'), t('colVendorName'), t('colCoo'), t('colUsd2025'), t('colUsd2026'), t('colPctChange')];",
-    "  var header = [t('colIndividualVendorName'), t('colVendorName'), t('colCoo'), t('colUsd2025'), t('colUsd2026'), t('colPctChange'), t('colForecastUsd')];",
+    "  var header = [t('colIndividualVendorName'), t('colVendorName'), t('colCoo'), t('colUsd2025'), t('colUsd2026'), t('colPctChange'), t('colForecastUsd'), t('colTotalCost')];",
     'CSV header'
   );
   html = mustReplace(
     html,
     "    lines.push(['', g.vendor, hasCoo ? '' : (g.cooRows[0] ? g.cooRows[0].coo : ''), fmtCsvNum(g.usd2025), fmtCsvNum(g.usd2026), fmtCsvNum(g.pctChange)].map(csvEscape).join(','));",
-    "    lines.push(['', vendorRowLabel(g), hasCoo ? '' : (g.cooRows[0] ? g.cooRows[0].coo : ''), fmtCsvNum(g.usd2025), fmtCsvNum(g.usd2026), fmtCsvNum(g.pctChange), fmtCsvNum(g.forecastUsd)].map(csvEscape).join(','));",
+    "    lines.push(['', vendorRowLabel(g), hasCoo ? '' : (g.cooRows[0] ? g.cooRows[0].coo : ''), fmtCsvNum(g.usd2025), fmtCsvNum(g.usd2026), fmtCsvNum(g.pctChange), fmtCsvNum(g.forecastUsd), fmtCsvNum(totalCostOf(g))].map(csvEscape).join(','));",
     'CSV group row'
   );
   html = mustReplace(
     html,
     "      if (hasCoo) lines.push(['', g.vendor, c.coo, fmtCsvNum(c.usd2025), fmtCsvNum(c.usd2026), fmtCsvNum(c.pctChange)].map(csvEscape).join(','));",
-    "      if (hasCoo) lines.push(['', vendorRowLabel(g), c.coo, fmtCsvNum(c.usd2025), fmtCsvNum(c.usd2026), fmtCsvNum(c.pctChange), fmtCsvNum(c.forecastUsd)].map(csvEscape).join(','));",
+    "      if (hasCoo) lines.push(['', vendorRowLabel(g), c.coo, fmtCsvNum(c.usd2025), fmtCsvNum(c.usd2026), fmtCsvNum(c.pctChange), fmtCsvNum(c.forecastUsd), fmtCsvNum(totalCostOf(c))].map(csvEscape).join(','));",
     'CSV country row'
   );
   html = mustReplace(
     html,
     "        lines.push([v.vendorName, g.vendor, c.coo, fmtCsvNum(v.usd2025), fmtCsvNum(v.usd2026), fmtCsvNum(v.pctChange)].map(csvEscape).join(','));",
-    "        lines.push([v.vendorName, vendorRowLabel(g), c.coo, fmtCsvNum(v.usd2025), fmtCsvNum(v.usd2026), fmtCsvNum(v.pctChange), fmtCsvNum(v.forecastUsd)].map(csvEscape).join(','));",
+    "        lines.push([v.vendorName, vendorRowLabel(g), c.coo, fmtCsvNum(v.usd2025), fmtCsvNum(v.usd2026), fmtCsvNum(v.pctChange), fmtCsvNum(v.forecastUsd), fmtCsvNum(totalCostOf(v))].map(csvEscape).join(','));",
     'CSV vendor row'
   );
   html = mustReplace(
     html,
     "  var csv = '\\ufeff' + lines.join('\\r\\n');",
     "  var csvTot = forecastColumnTotal(groups);\n" +
-    "  lines.push([t('totalLabel'), '', '', fmtCsvNum(csvTot.usd2025), fmtCsvNum(csvTot.usd2026), fmtCsvNum(csvTot.pctChange), fmtCsvNum(csvTot.forecastUsd)].map(csvEscape).join(','));\n" +
+    "  lines.push([t('totalLabel'), '', '', fmtCsvNum(csvTot.usd2025), fmtCsvNum(csvTot.usd2026), fmtCsvNum(csvTot.pctChange), fmtCsvNum(csvTot.forecastUsd), fmtCsvNum(csvTot.totalCost)].map(csvEscape).join(','));\n" +
     "  var csv = '\\ufeff' + lines.join('\\r\\n');",
     'CSV total'
   );

@@ -3858,11 +3858,12 @@ const sheetsData = [
 // the handler checks for the parent function first). Missing source file
 // only warns, so a Sales-only rebuild never fails because of it.
 //
-// Forecast subtotal purchase cost is NOT in that Purchase page. Forecast
+// Forecast cost and total cost are NOT in that Purchase page. Forecast
 // Prime_USD lives only here (forecast_sheet.json: outstanding orders,
 // Epidueqty, Ship By Date, no commission). injectForecastPurchaseColumn()
-// joins it onto the embedded GROUPS after the verbatim copy. A later
-// verbatim re-embed must keep this call — dropping it removes the column.
+// joins it onto the embedded GROUPS after the verbatim copy and adds
+// Total cost = 2026 PO Price w/comm + forecast cost. A later verbatim
+// re-embed must keep this call — dropping it removes both columns.
 // It does not recompute 2025/2026 actuals or pctChange.
 const { injectForecastPurchaseColumn, PURCHASE_YTD_SOURCE_FOOT } = require('./purchase_ytd_forecast.js');
 const PURCHASE_HTML_PATH = 'C:\\Users\\User\\Desktop\\MTC Purchase Report Claude\\FIN_MTC_Purchase_Report_html_TEMP_RV1.html';
