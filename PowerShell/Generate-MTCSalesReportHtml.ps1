@@ -680,8 +680,17 @@ function Export-FamilyCategoryMap($excel, $fileName) {
 # PowerShell 5.1 misdecodes it under the system codepage and would silently
 # miss the file (the exact bug class already guarded for "總計" above), so it
 # is resolved by wildcard instead.
-$DOMESTIC_SOURCE = (Get-ChildItem -Path $projectDir -Filter "Domestic Orders*.xlsx" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-if (-not $DOMESTIC_SOURCE) { throw "Domestic Orders source workbook ('Domestic Orders*.xlsx') not found in: $projectDir" }
+# Prefer the Domestic/ subfolder (canonical SOP location); fall back to project
+# root for older layouts. Newest write wins if several copies exist.
+$domesticDir = Join-Path $projectDir "Domestic"
+$DOMESTIC_SOURCE = $null
+if (Test-Path $domesticDir) {
+  $DOMESTIC_SOURCE = (Get-ChildItem -Path $domesticDir -Filter "Domestic Orders*.xlsx" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+}
+if (-not $DOMESTIC_SOURCE) {
+  $DOMESTIC_SOURCE = (Get-ChildItem -Path $projectDir -Filter "Domestic Orders*.xlsx" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+}
+if (-not $DOMESTIC_SOURCE) { throw "Domestic Orders source workbook ('Domestic Orders*.xlsx') not found in: $domesticDir or $projectDir" }
 
 # FX standard-rate workbook picked by the PERIOD encoded in its filename
 # (STANDARD EXCHANGE RATE-YYYY-MM.xls), preferring the one matching the FIN

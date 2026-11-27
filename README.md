@@ -140,8 +140,9 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
 - 2026-11-11: Desktop folder renamed from `MTC Sales Report Claude` to `MTC Performance Report Claude`, matching the combined MTC Performance Report. The GitHub repository name stays `MTC_Sales_Report`. Sheet names, source file names, and script names are unchanged.
 - Docs consolidated (2026-11-10): README and the report's welcome intro (now v3) were
   rewritten to match the 11-tab MTC Performance Report; the legacy SOP docx was retired —
-  the written procedure is now this README + `DOMESTIC-AND-GLOBE-SOP-appendix.md` +
-  `PowerShell List.md` + `presentation.md`.
+  the written procedure is now this README + **`Documentation/MONTHLY-SOP.md`** (the finalized
+  3-stage monthly SOP: month-end Forecast + SC17 verify → Peggy email → build/publish) +
+  `DOMESTIC-AND-GLOBE-SOP-appendix.md` + `PowerShell List.md` + `presentation.md`.
 - 2026-11-09 cycle (all pushed to GitHub `origin/MTC`): Domestic tab + 3D globe + YoY KPI
   cards landed; report retitled to MTC Performance Report; McKinsey-style presentation
   pass (action titles, exhibit numbering, source footnotes).

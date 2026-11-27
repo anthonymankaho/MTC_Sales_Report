@@ -37,6 +37,7 @@ The Forecast Data tab is produced by Python scripts (not PowerShell) in `Forecas
 | `Forecast\fetch_mtc_details.py` | Logs into the Epicor portal (env `EPICOR_USER`/`EPICOR_PASS`) and Retrieves each SO/PO extended entity (DetailList lines); caches to `_work_mtc_details_raw.json`; writes EPI_SO/PO Detail xlsx. |
 | `Forecast\fetch_missing_pos.py` / `fetch_missing_sos.py` | Backfill the 1:1 SO↔PO join gaps (stale header snapshots) into the raw cache. |
 | `Forecast\combine_mtc_data.py` | Builds the 98-col `data` sheet: joins SO.PonumE27==PO.PonumJ16 (FIFO by SKU), outstanding-only (excludes COMPLETED/CANCELLED), values at Epidueqty (unshipped), buckets by Ship By Date, FX from `fx_report_island.json` (USD-per-unit). Lookups from Sku/Part/BRAND sheets. Output `MTC_FORECAST_YYYYMM_UPDATED.xlsx`. |
+| `Forecast\verify_forecast_vs_sc17.py` | **SOP Stage-1 VERIFY**: compares the built forecast vs an SC17/SCF017 outstanding report by (SO,PART) qty; lists qty-diffs / forecast-only / SC17-only + totals. Accept only when IDENTICAL at same cutoff. Handles SC17 (ORD_NBR/IVR_QTY) and SCF017 (ord_nbr/due_qty) headers. |
 
 - Sku/Part lookup sheets are refreshed from MMS via the `mms-login` skill (SKU Excel export + `GetPartList`).
 - `MTC_FORECAST_YYYYMM_UPDATED.xlsx` is the forecast source the HTML generator reads.
