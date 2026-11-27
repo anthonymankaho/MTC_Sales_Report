@@ -627,7 +627,11 @@ function Export-DomesticTables($ws, $fileName) {
 # own main column, so the table needs both. Many Family1 values map to the
 # same Family Category, never the reverse, so a flat last-write-wins
 # dictionary keyed by Family1 is enough - no aggregation needed here.
-$FAMILY_CATEGORY_SOURCE = [System.IO.Path]::GetFullPath((Join-Path $projectDir "Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx"))
+$FAMILY_CATEGORY_SOURCE = [System.IO.Path]::GetFullPath((Join-Path $projectDir "Sales-Data-MTC-Mthly Rate - UPDATED.xlsx"))
+if (-not (Test-Path $FAMILY_CATEGORY_SOURCE)) {
+  # fallback: pre-promotion cleaned master name (archived cycles)
+  $FAMILY_CATEGORY_SOURCE = [System.IO.Path]::GetFullPath((Join-Path $projectDir "Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx"))
+}
 function Export-FamilyCategoryMap($excel, $fileName) {
   if (-not (Test-Path $FAMILY_CATEGORY_SOURCE)) {
     Write-Host "  WARNING: Family Category source not found at $FAMILY_CATEGORY_SOURCE - skipping (Prod Family tab will show blank brand column)"

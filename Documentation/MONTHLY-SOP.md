@@ -30,6 +30,38 @@ Three stages. Stage 1 is time-triggered; Stage 2 is email-triggered; Stage 3 bui
      cutoff). Compare forecast vs SC17 at the SAME timestamp; a stale forecast vs a newer
      SC17 will show shipment drift, not a method error.
 
+### Stage 1 automation (month-end runner)
+
+`Forecast/Run-ForecastMonthEnd.ps1` does steps 1–2 in one run:
+
+- **Date guard:** runs only on the **last business day of the month** (walks back over
+  Sat/Sun); other days it logs `SKIP` and exits. `-Force` bypasses the guard (manual run).
+- **Data source (combine both):** prefers the newest downloaded `EPI_SCF017_*.xlsx`
+  (Downloads, then `Forecast/`, also `SC17_*.xlsx`) → `build_forecast_from_scf017.py`
+  (complete coverage, forecast == SC17). If none is found and Epicor credentials are
+  stored (DPAPI, `Forecast/epicor_credentials.dat`, set once via `-SetCredentials`),
+  it fetches SO/PO + combines instead (warns: coverage may be partial).
+- Then runs the **SC17 verify** automatically and logs to `Forecast/forecast_monthend_log.txt`.
+
+**Launcher:** `Builder Forecast.bat` (also option 4 in `Builder HTML.bat`):
+1 run month-end now (`-Force`) · 2 store Epicor creds · 3 fetch SO/PO · 4 build from a
+SCF017/SC17 file · 5 verify vs SCF017/SC17.
+
+**Scheduled Task** (daily 16:00 trigger + the script's date guard; `StartWhenAvailable`
+so a missed run catches up at next boot — `schtasks /Create` cannot set this flag):
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+  -Argument '-NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Users\User\Desktop\MTC Performance Report Claude\Forecast\Run-ForecastMonthEnd.ps1"' `
+  -WorkingDirectory 'C:\Users\User\Desktop\MTC Performance Report Claude\Forecast'
+$trigger  = New-ScheduledTaskTrigger -Daily -At 16:00
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName 'MTC_Forecast_MonthEnd' -Action $action -Trigger $trigger -Settings $settings
+```
+
+Before month-end, download the current-time **SCF017** from Epicor into Downloads (or
+store Epicor creds once via `Builder Forecast.bat` option 2 for the auto-fetch fallback).
+
 ## Stage 2 — Peggy's Sales & Commission email (trigger)
 
 **When:** Gmail receives **「MTC: Sales & Commission Report YYYY - Mmm」** from Peggy.

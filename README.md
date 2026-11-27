@@ -33,7 +33,7 @@ optionally building the interactive **MTC Performance Report** HTML for distribu
    ```powershell
    cd "C:\Users\User\Desktop\MTC Performance Report Claude"
    powershell -ExecutionPolicy Bypass -File PowerShell\Combine-Into-Master.ps1 `
-     -MasterPath "Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx" `
+     -MasterPath "Sales-Data-MTC-Mthly Rate - UPDATED.xlsx" `
      -ImportPath "MTC_Import_Rows.xlsx" `
      -OutputPath "Sales-Data-MTC-Mthly Rate - UPDATED_YYYYMM.xlsx"
    ```
@@ -128,9 +128,30 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
    Product Family Desc, Meyer Brand, Commodity) from the workbook's Sku/Part/BRAND sheets.
 3. The `Sku`/`Part` lookup sheets are refreshed from MMS (`mms-login` skill; SKU Excel
    export + GetPartList). Output `MTC_FORECAST_YYYYMM_UPDATED.xlsx` is the forecast source.
+4. `build_forecast_from_scf017.py <SCF017.xlsx> [output.xlsx]` — rebuild the 98-col
+   forecast directly from the **current-time SCF017** (complete coverage; forecast ==
+   SC17). Lookups auto-detected from the newest `MTC_FORECAST_*_UPDATED.xlsx` that has
+   Sku/Part/BRAND sheets (data-only rebuild outputs are skipped).
+5. `verify_forecast_vs_sc17.py [forecast.xlsx] <SC17_or_SCF017.xlsx>` — SOP Stage-1
+   quantity verify; accept only `RESULT: IDENTICAL`. Empty forecast arg = newest
+   `MTC_FORECAST_*_UPDATED.xlsx`.
+6. **Month-end automation:** `Run-ForecastMonthEnd.ps1` (SOP Stage 1) — last-business-day
+   date guard (`-Force` bypasses), prefers the newest downloaded SCF017, falls back to
+   Epicor auto-fetch when DPAPI creds are stored (`-SetCredentials`), then verifies and
+   logs to `forecast_monthend_log.txt`. Designed for a daily 16:00 Scheduled Task with
+   `StartWhenAvailable` (registration command in `Documentation/MONTHLY-SOP.md`).
+   `Builder Forecast.bat` wraps all of it (also option 4 in `Builder HTML.bat`).
 
-## Current progress (2026-11-26)
+## Current progress (2026-11-27)
 
+- 2026-11-27: **Forecast rebuilt complete from SCF017 (Nov-27)** — 948 keys / 951 rows /
+  1,851,210 qty, `RESULT: IDENTICAL` vs SCF017 (the old Oct-cutoff forecast missed 266
+  still-outstanding keys). Month-end automation added: `Run-ForecastMonthEnd.ps1`
+  (last-business-day guard, SCF017-preferred + Epicor-creds fallback, auto-verify),
+  `Builder Forecast.bat` (+ `Builder HTML.bat` option 4), parameterized
+  `build_forecast_from_scf017.py`. Generator brand lookup repointed to the live master
+  `Sales-Data-MTC-Mthly Rate - UPDATED.xlsx`. Scheduled Task `MTC_Forecast_MonthEnd`
+  (daily 16:00, `StartWhenAvailable`) — registration command in the SOP.
 - 2026-11-26: **Forecast section shipped.** New Forecast Data tab + Shipped Data rename;
   Dashboard split into 4 rows (Total/Shipped/Domestic/Forecast) with a Total-only section
   filter and per-row filter-context lines; Domestic = MTC commission earning; Ask AI made
@@ -160,6 +181,8 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
 | Path | Purpose |
 | --- | --- |
 | `Builder Data.bat`, `Builder HTML.bat` | Menu launchers for the data cycle and HTML builder |
+| `Builder Forecast.bat` | Forecast menu: month-end run, Epicor creds, fetch, build from SCF017, verify |
+| `Forecast/Run-ForecastMonthEnd.ps1` | SOP Stage-1 month-end runner (date guard + SCF017/Epicor combine + verify) |
 | `app/index.html` | Browser staging tool (tool Steps 1–5, output = SOP Step 3–4) |
 | `app/xlsx.full.min.js` | SheetJS library used client-side by the tool |
 | `PowerShell/Check-SourceTransactionCounts.ps1` | Pre-staging row-count gate on the three core exports |
@@ -175,7 +198,7 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
 | `HTML_Report_Generator/vendor/` | jQuery, DataTables, Chart.js, three.module.min.js, land-110m.json |
 | `HTML_Report_Generator/_work/` | Transient JSON islands (rebuilt each run; `-KeepWork` keeps them) |
 | `Sales-Data-MTC-Mthly Rate.xlsx` | Original 145-column reference master — never a merge target |
-| `Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx` | Current cleaned 95-column master |
+| `Sales-Data-MTC-Mthly Rate - UPDATED.xlsx` | Current cleaned 95-column master (promoted; former `…_20261103_CLEANED_95COL.xlsx`) |
 | `Sales-Data-MTC-Mthly Rate - UPDATED_YYYYMM.xlsx` | Month-dated merge output (promote after checking) |
 | `MTC_Import_Rows.xlsx` | Staged output from `app/index.html`, ready to merge |
 | `IVR032.xlsx`, `STANDARD EXCHANGE RATE-YYYY-MM.xls`, `Sales & Commission Report-MTC.xlsx`, `EPI_Purchase Commission Combined.xlsx`, `ACT001.xlsx` | Current-month source files in the root |
@@ -203,11 +226,11 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
 
 ## Notes
 
-- **Master-promotion caveat:** `PowerShell/Generate-MTCSalesReportHtml.ps1` currently
-  pins the `Family1 → Family Category` brand lookup to
-  `…UPDATED_20261103_CLEANED_95COL.xlsx` by filename. When you promote a new cleaned
-  master next month, update that line (or point it at a wildcard like the Domestic
-  workbook) — otherwise the Brand column degrades to blank with a console warning.
+- **Master-promotion caveat:** `PowerShell/Generate-MTCSalesReportHtml.ps1` reads the
+  `Family1 → Family Category` brand lookup from the live master
+  `Sales-Data-MTC-Mthly Rate - UPDATED.xlsx` (falls back to the old
+  `…_20261103_CLEANED_95COL.xlsx` name if absent). Keep the promoted master at that
+  filename — otherwise the Brand column degrades to blank with a console warning.
 - **Re-extraction caveat:** the Domestic INR rate is synthesised from the **newest by
   filename date** `FIN_Ex Rate_PSBUILD_YYYYMMDD.xlsx` in
   `..\Weekly Exchange Report - CLAUDE\Output`. Re-running the full generator after the

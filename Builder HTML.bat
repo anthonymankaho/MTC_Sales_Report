@@ -12,17 +12,23 @@ echo ==========================================
 echo 1. Open the browser-based import staging tool
 echo 2. Generate the interactive HTML report
 echo 3. Merge staged import using PowerShell\App\Combine-Into-Master.ps1
+echo 4. Forecast pipeline (Builder Forecast.bat)
 echo 0. Exit
 echo.
 set "CHOICE="
 set /p "CHOICE=Choose an action: "
 if "%CHOICE%"=="1" goto staging
 if "%CHOICE%"=="2" goto report
+if "%CHOICE%"=="4" goto forecast
 goto mergecheck
 :mergecheck
 if "%CHOICE%"=="3" goto merge
 if "%CHOICE%"=="0" goto done
 goto menu
+
+:forecast
+call "%ROOT%Builder Forecast.bat"
+goto finished
 
 :staging
 start "" "%ROOT%app\index.html"
@@ -30,19 +36,18 @@ echo Opened the browser-based staging tool.
 goto finished
 
 :report
-echo WARNING: Current generator reads the FIN_MTC DATA sheet (145 columns).
-echo It does not yet generate a 95-column Data tab.
+echo Builds Shipped Data (95-col) + Forecast Data (98-col) + Domestic tabs.
 %PS% -File "%ROOT%PowerShell\Generate-MTCSalesReportHtml.ps1"
 if errorlevel 1 (echo ERROR: HTML report generation failed. Review the PowerShell message above.) else echo HTML report generation completed.
 goto finished
 
 :merge
-set "MASTER=%ROOT%Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx"
+set "MASTER=%ROOT%Sales-Data-MTC-Mthly Rate - UPDATED.xlsx"
 set "IMPORT=%ROOT%MTC_Import_Rows.xlsx"
 set "OUTPUT="
 echo Press Enter to accept the default master and import paths.
 set /p "MASTER=Cleaned 95-column master [%MASTER%]: "
-if not defined MASTER set "MASTER=%ROOT%Sales-Data-MTC-Mthly Rate - UPDATED_20261103_CLEANED_95COL.xlsx"
+if not defined MASTER set "MASTER=%ROOT%Sales-Data-MTC-Mthly Rate - UPDATED.xlsx"
 set /p "IMPORT=Staged import workbook [%IMPORT%]: "
 if not defined IMPORT set "IMPORT=%ROOT%MTC_Import_Rows.xlsx"
 set /p "OUTPUT=New output workbook path (include the reporting month): "

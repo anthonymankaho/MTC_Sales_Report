@@ -12,3 +12,5 @@ FIN_MTC_Performance_Report_html_TEMP - 複製.html
 Forecast/*.xlsx
 Forecast/*.json
 !Forecast/fx_report_island.json
+Forecast/forecast_monthend_log.txt
+Forecast/epicor_credentials.dat
