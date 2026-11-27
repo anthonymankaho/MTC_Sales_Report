@@ -151,7 +151,8 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
   `Builder Forecast.bat` (+ `Builder HTML.bat` option 4), parameterized
   `build_forecast_from_scf017.py`. Generator brand lookup repointed to the live master
   `Sales-Data-MTC-Mthly Rate - UPDATED.xlsx`. Scheduled Task `MTC_Forecast_MonthEnd`
-  (daily 16:00, `StartWhenAvailable`) — registration command in the SOP.
+  (daily 16:00, `StartWhenAvailable`) — registration command in the SOP. Full end-to-end
+  SOP drafted: `Documentation/MTC Performance Report SOP.md` + `.docx` (v1.0).
 - 2026-11-26: **Forecast section shipped.** New Forecast Data tab + Shipped Data rename;
   Dashboard split into 4 rows (Total/Shipped/Domestic/Forecast) with a Total-only section
   filter and per-row filter-context lines; Domestic = MTC commission earning; Ask AI made
@@ -161,9 +162,11 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
 - 2026-11-11: Desktop folder renamed from `MTC Sales Report Claude` to `MTC Performance Report Claude`, matching the combined MTC Performance Report. The GitHub repository name stays `MTC_Sales_Report`. Sheet names, source file names, and script names are unchanged.
 - Docs consolidated (2026-11-10): README and the report's welcome intro (now v3) were
   rewritten to match the 11-tab MTC Performance Report; the legacy *Import* SOP docx was retired
-  (archived) — the written procedure is now this README + **`Documentation/MONTHLY-SOP.md`** and its
-  Word version **`Documentation/MTC Performance Report Monthly SOP.docx`** (the finalized 3-stage
-  monthly SOP: month-end Forecast + SC17 verify → Peggy email → build/publish) +
+  (archived) — the written procedure is now this README + the full
+  **`Documentation/MTC Performance Report SOP.md`** (+ Word **`MTC Performance Report SOP.docx`**,
+  drafted 2026-11-27: end-to-end cycle, acceptance checklist, troubleshooting) with
+  **`Documentation/MONTHLY-SOP.md`** (+ Word **`MTC Performance Report Monthly SOP.docx`**) as the
+  3-stage quick reference (month-end Forecast + SC17 verify → Peggy email → build/publish) +
   `DOMESTIC-AND-GLOBE-SOP-appendix.md` + `PowerShell List.md` + `presentation.md`.
 - 2026-11-09 cycle (all pushed to GitHub `origin/MTC`): Domestic tab + 3D globe + YoY KPI
   cards landed; report retitled to MTC Performance Report; McKinsey-style presentation
@@ -206,7 +209,8 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
 | `FIN_MTC Sales & Margin (...)_YYYYMMDD_R#.xlsx` | Finance source for the HTML report (auto-detected newest) |
 | `FIN_MTC_Performance_Report_html_TEMP.html` | Output of the HTML report generator — shareable single file |
 | `202609/`, `2026-10/`, `Pur Comm/` | Archived monthly outputs and purchase-commission history. `2026-10/` holds the Oct-2026 cycle supporting files (FIN (1-10) R0 + BEFORE_PRES, UPDATED_202610 master, Oct FX, BEFORE_REGION_PRES html). The live TEMP report stays in root. |
-| `Documentation/MTC Performance Report Monthly SOP.docx` | Word version of the finalized monthly SOP (generated from `MONTHLY-SOP.md`) |
+| `Documentation/MTC Performance Report SOP.md` / `.docx` | Full end-to-end SOP (v1.0, 2026-11-27): stages, acceptance checklist, troubleshooting, tooling map |
+| `Documentation/MTC Performance Report Monthly SOP.docx` | Word version of the 3-stage monthly quick-reference SOP (generated from `MONTHLY-SOP.md`) |
 | `Reports/Audit Summaries/`, `Reference/Prompts/` | Dated audit exports; reusable reference prompts |
 | `MTC SANDBOX/` | Untracked test area (revised-script trials, `TEST_*.xlsx`) — never merge-target |
 | `Forecast/` | Forecast data pipeline (Python): `fetch_mtc_details.py`, `combine_mtc_data.py`, `MTC_FORECAST_YYYYMM_UPDATED.xlsx` (forecast source), `fx_report_island.json`, MMS-refreshed Sku/Part lookups |
