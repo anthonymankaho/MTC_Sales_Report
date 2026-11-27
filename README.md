@@ -139,9 +139,10 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
   is the finished version (pushed to `origin/MTC`). Forecast data pipeline lives in `Forecast/`.
 - 2026-11-11: Desktop folder renamed from `MTC Sales Report Claude` to `MTC Performance Report Claude`, matching the combined MTC Performance Report. The GitHub repository name stays `MTC_Sales_Report`. Sheet names, source file names, and script names are unchanged.
 - Docs consolidated (2026-11-10): README and the report's welcome intro (now v3) were
-  rewritten to match the 11-tab MTC Performance Report; the legacy SOP docx was retired —
-  the written procedure is now this README + **`Documentation/MONTHLY-SOP.md`** (the finalized
-  3-stage monthly SOP: month-end Forecast + SC17 verify → Peggy email → build/publish) +
+  rewritten to match the 11-tab MTC Performance Report; the legacy *Import* SOP docx was retired
+  (archived) — the written procedure is now this README + **`Documentation/MONTHLY-SOP.md`** and its
+  Word version **`Documentation/MTC Performance Report Monthly SOP.docx`** (the finalized 3-stage
+  monthly SOP: month-end Forecast + SC17 verify → Peggy email → build/publish) +
   `DOMESTIC-AND-GLOBE-SOP-appendix.md` + `PowerShell List.md` + `presentation.md`.
 - 2026-11-09 cycle (all pushed to GitHub `origin/MTC`): Domestic tab + 3D globe + YoY KPI
   cards landed; report retitled to MTC Performance Report; McKinsey-style presentation
@@ -181,7 +182,8 @@ Forecast tab is skipped (build still succeeds). Pipeline (Python, in `Forecast/`
 | `Domestic Orders 2026–2027 — MJP _ MCN _ MZQ _ MIN (for Accounts).xlsx` | Domestic snapshot for the Domestic tab (read via wildcard) |
 | `FIN_MTC Sales & Margin (...)_YYYYMMDD_R#.xlsx` | Finance source for the HTML report (auto-detected newest) |
 | `FIN_MTC_Performance_Report_html_TEMP.html` | Output of the HTML report generator — shareable single file |
-| `202609/`, `Pur Comm/` | Archived monthly outputs and purchase-commission history |
+| `202609/`, `2026-10/`, `Pur Comm/` | Archived monthly outputs and purchase-commission history. `2026-10/` holds the Oct-2026 cycle supporting files (FIN (1-10) R0 + BEFORE_PRES, UPDATED_202610 master, Oct FX, BEFORE_REGION_PRES html). The live TEMP report stays in root. |
+| `Documentation/MTC Performance Report Monthly SOP.docx` | Word version of the finalized monthly SOP (generated from `MONTHLY-SOP.md`) |
 | `Reports/Audit Summaries/`, `Reference/Prompts/` | Dated audit exports; reusable reference prompts |
 | `MTC SANDBOX/` | Untracked test area (revised-script trials, `TEST_*.xlsx`) — never merge-target |
 | `Forecast/` | Forecast data pipeline (Python): `fetch_mtc_details.py`, `combine_mtc_data.py`, `MTC_FORECAST_YYYYMM_UPDATED.xlsx` (forecast source), `fx_report_island.json`, MMS-refreshed Sku/Part lookups |
